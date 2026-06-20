@@ -953,3 +953,32 @@ td a {
   font-weight: 700;
   line-height: 1.5;
 }
+
+/* ------------------------------------------------------------------
+ * Portfolio header controls
+ * ------------------------------------------------------------------ */
+
+.portfolio-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  justify-content: flex-end;
+}
+
+.compact-select-label {
+  display: grid;
+  gap: 6px;
+  color: var(--color-muted);
+  font-weight: 800;
+}
+
+.compact-select-label select {
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: #ffffff;
+  color: var(--color-text);
+  font-weight: 800;
+}

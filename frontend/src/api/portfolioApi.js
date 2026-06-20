@@ -21,10 +21,15 @@ export async function fetchDashboard() {
 /**
  * Fetch portfolio data for the authenticated user.
  *
+ * @param {string} baseCurrency - Portfolio base currency.
  * @returns {Promise<object>} Portfolio data.
  */
-export async function fetchPortfolio() {
-  const response = await apiClient.get("/portfolio/");
+export async function fetchPortfolio(baseCurrency = "EUR") {
+  const response = await apiClient.get("/portfolio/", {
+    params: {
+      base_currency: baseCurrency,
+    },
+  });
 
   return response.data;
 }

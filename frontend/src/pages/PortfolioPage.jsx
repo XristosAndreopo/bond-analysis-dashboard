@@ -2,7 +2,7 @@
  * Portfolio page.
  *
  * Displays bonds owned by the user and backend-calculated portfolio-level
- * financial metrics.
+ * financial metrics using FX conversion into a selected base currency.
  */
 
 import { useEffect, useState } from "react";
@@ -19,14 +19,17 @@ import {
   formatRatioAsPercent,
 } from "../utils/formatters";
 
+const BASE_CURRENCY_OPTIONS = ["EUR", "USD", "GBP"];
+
 function PortfolioPage() {
   const [portfolioData, setPortfolioData] = useState(null);
+  const [baseCurrency, setBaseCurrency] = useState("EUR");
   const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
     async function loadPortfolio() {
       try {
-        const data = await fetchPortfolio();
+        const data = await fetchPortfolio(baseCurrency);
         setPortfolioData(data);
       } catch (error) {
         setErrorMessage("Δεν ήταν δυνατή η φόρτωση του Portfolio.");
@@ -34,7 +37,11 @@ function PortfolioPage() {
     }
 
     loadPortfolio();
-  }, []);
+  }, [baseCurrency]);
+
+  function handleBaseCurrencyChange(event) {
+    setBaseCurrency(event.target.value);
+  }
 
   if (errorMessage) {
     return <div className="error-box">{errorMessage}</div>;
@@ -47,6 +54,10 @@ function PortfolioPage() {
   const rows = portfolioData.items || [];
   const summary = portfolioData.summary;
   const metrics = portfolioData.portfolio_metrics || {};
+  const portfolioBaseCurrency =
+    metrics.portfolio_base_currency ||
+    summary.portfolio_base_currency ||
+    baseCurrency;
 
   return (
     <section className="page-section">
@@ -55,13 +66,29 @@ function PortfolioPage() {
           <h1>Portfolio</h1>
           <p>
             Χρηματοοικονομική εικόνα των ομολόγων που κατέχεις, με υπολογισμούς
-            από το backend.
+            από το backend και FX conversion.
           </p>
         </div>
 
-        <Link to="/positions/new?type=PORTFOLIO" className="primary-link-button">
-          Add to Portfolio
-        </Link>
+        <div className="portfolio-header-actions">
+          <label className="compact-select-label">
+            Base Currency
+            <select value={baseCurrency} onChange={handleBaseCurrencyChange}>
+              {BASE_CURRENCY_OPTIONS.map((currency) => (
+                <option key={currency} value={currency}>
+                  {currency}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <Link
+            to="/positions/new?type=PORTFOLIO"
+            className="primary-link-button"
+          >
+            Add to Portfolio
+          </Link>
+        </div>
       </div>
 
       <Disclaimer text={portfolioData.disclaimer} />
@@ -72,8 +99,10 @@ function PortfolioPage() {
 
       <div className="summary-grid">
         <div className="summary-card">
-          <span>Total Value</span>
-          <strong>{formatMoney(summary.total_value, "", 2)}</strong>
+          <span>Total Value ({portfolioBaseCurrency})</span>
+          <strong>
+            {formatMoney(summary.total_value, portfolioBaseCurrency, 2)}
+          </strong>
         </div>
 
         <div className="summary-card">
@@ -96,7 +125,7 @@ function PortfolioPage() {
         <FinancialMetricCard
           title="Weighted Avg YTM"
           value={formatPercent(metrics.weighted_average_ytm, 2)}
-          description="Σταθμισμένη απόδοση έως τη λήξη με βάση το βάρος κάθε θέσης."
+          description="Σταθμισμένη απόδοση έως τη λήξη με βάση το converted weight κάθε θέσης."
         />
 
         <FinancialMetricCard
@@ -113,16 +142,12 @@ function PortfolioPage() {
 
         <FinancialMetricCard
           title="Est. Annual Coupon Income"
-          value={
-            metrics.has_mixed_currencies
-              ? "Multiple currencies"
-              : formatMoney(
-                  metrics.estimated_annual_coupon_income,
-                  metrics.main_currency,
-                  2
-                )
-          }
-          description="Εκτιμώμενο ετήσιο καθαρό εισόδημα κουπονιών. Σε πολλά νομίσματα εμφανίζεται ανά νόμισμα."
+          value={formatMoney(
+            metrics.estimated_annual_coupon_income,
+            portfolioBaseCurrency,
+            2
+          )}
+          description="Εκτιμώμενο ετήσιο καθαρό εισόδημα κουπονιών σε base currency."
         />
       </div>
 
@@ -172,6 +197,7 @@ function PortfolioPage() {
         <PortfolioInsightCard title="Currency Exposure">
           <ExposureList
             items={metrics.currency_exposure}
+            portfolioBaseCurrency={portfolioBaseCurrency}
             emptyMessage="Δεν υπάρχει ακόμα currency exposure."
           />
         </PortfolioInsightCard>
@@ -181,6 +207,7 @@ function PortfolioPage() {
         <PortfolioInsightCard title="Annual Coupon Income by Currency">
           <CouponIncomeList
             items={metrics.estimated_annual_coupon_income_by_currency}
+            portfolioBaseCurrency={portfolioBaseCurrency}
             emptyMessage="Δεν υπάρχει ακόμα εκτιμώμενο εισόδημα κουπονιών."
           />
         </PortfolioInsightCard>
@@ -217,7 +244,9 @@ function PortfolioPage() {
                 <th>Bond</th>
                 <th>ISIN</th>
                 <th>Currency</th>
-                <th>Position Value</th>
+                <th>Original Value</th>
+                <th>FX Rate</th>
+                <th>Converted Value</th>
                 <th>Weight</th>
                 <th>YTM</th>
                 <th>Current Yield</th>
@@ -225,14 +254,13 @@ function PortfolioPage() {
                 <th>Risk Score</th>
                 <th>Risk Level</th>
                 <th>Signal</th>
-                <th>Reasoning</th>
               </tr>
             </thead>
 
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan="12">Δεν υπάρχουν ακόμα ομόλογα στο Portfolio.</td>
+                  <td colSpan="13">Δεν υπάρχουν ακόμα ομόλογα στο Portfolio.</td>
                 </tr>
               ) : (
                 rows.map((row) => {
@@ -250,10 +278,24 @@ function PortfolioPage() {
                       <td>{bond.currency}</td>
                       <td>
                         {formatMoney(
-                          analysis?.position_value,
-                          bond.currency,
+                          row.original_position_value,
+                          row.original_currency,
                           2
                         )}
+                      </td>
+                      <td>
+                        {row.fx_rate_missing
+                          ? "Missing"
+                          : formatDecimal(row.fx_rate_to_base, 6)}
+                      </td>
+                      <td>
+                        {row.fx_rate_missing
+                          ? "-"
+                          : formatMoney(
+                              row.converted_position_value,
+                              row.portfolio_base_currency,
+                              2
+                            )}
                       </td>
                       <td>{formatRatioAsPercent(row.weight, 2)}</td>
                       <td>{formatPercent(marketData?.ytm, 2)}</td>
@@ -272,7 +314,6 @@ function PortfolioPage() {
                           label={analysis?.final_signal_label}
                         />
                       </td>
-                      <td>{analysis?.reasoning || "-"}</td>
                     </tr>
                   );
                 })
@@ -318,7 +359,7 @@ function PositionInsight({ item, metricLabel, metricValue }) {
   );
 }
 
-function ExposureList({ items, emptyMessage }) {
+function ExposureList({ items, portfolioBaseCurrency, emptyMessage }) {
   if (!items || items.length === 0) {
     return <p className="muted-text">{emptyMessage}</p>;
   }
@@ -329,7 +370,14 @@ function ExposureList({ items, emptyMessage }) {
         <div className="exposure-row" key={item.currency}>
           <div>
             <strong>{item.currency}</strong>
-            <span>{formatMoney(item.value, item.currency, 2)}</span>
+            <span>
+              {formatMoney(item.original_value, item.currency, 2)} →{" "}
+              {formatMoney(
+                item.converted_value,
+                portfolioBaseCurrency,
+                2
+              )}
+            </span>
           </div>
 
           <span>{formatRatioAsPercent(item.weight, 2)}</span>
@@ -339,7 +387,7 @@ function ExposureList({ items, emptyMessage }) {
   );
 }
 
-function CouponIncomeList({ items, emptyMessage }) {
+function CouponIncomeList({ items, portfolioBaseCurrency, emptyMessage }) {
   if (!items || items.length === 0) {
     return <p className="muted-text">{emptyMessage}</p>;
   }
@@ -350,10 +398,17 @@ function CouponIncomeList({ items, emptyMessage }) {
         <div className="exposure-row" key={item.currency}>
           <div>
             <strong>{item.currency}</strong>
-            <span>Estimated annual net coupon</span>
+            <span>
+              {formatMoney(item.original_value, item.currency, 2)} →{" "}
+              {formatMoney(
+                item.converted_value,
+                portfolioBaseCurrency,
+                2
+              )}
+            </span>
           </div>
 
-          <span>{formatMoney(item.value, item.currency, 2)}</span>
+          <span>Annual coupon</span>
         </div>
       ))}
     </div>

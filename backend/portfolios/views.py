@@ -105,8 +105,25 @@ def serialize_currency_rows(rows):
     for row in rows:
         serialized_row = {
             "currency": row["currency"],
-            "value": decimal_to_string(row["value"]),
         }
+
+        if "value" in row:
+            serialized_row["value"] = decimal_to_string(row["value"])
+
+        if "original_value" in row:
+            serialized_row["original_value"] = decimal_to_string(
+                row["original_value"]
+            )
+
+        if "converted_value" in row:
+            serialized_row["converted_value"] = decimal_to_string(
+                row["converted_value"]
+            )
+
+        if "portfolio_base_currency" in row:
+            serialized_row["portfolio_base_currency"] = row[
+                "portfolio_base_currency"
+            ]
 
         if "weight" in row:
             serialized_row["weight"] = decimal_to_string(row["weight"])
@@ -147,6 +164,8 @@ def serialize_portfolio_metrics(metrics):
         Serializable metrics dictionary.
     """
     return {
+        "portfolio_base_currency": metrics["portfolio_base_currency"],
+        "total_value_base": decimal_to_string(metrics["total_value_base"]),
         "weighted_average_ytm": decimal_to_string(
             metrics["weighted_average_ytm"]
         ),
@@ -170,6 +189,8 @@ def serialize_portfolio_metrics(metrics):
         ),
         "main_currency": metrics["main_currency"],
         "has_mixed_currencies": metrics["has_mixed_currencies"],
+        "has_missing_fx_rates": metrics["has_missing_fx_rates"],
+        "missing_fx_rates": metrics["missing_fx_rates"],
         "currency_exposure": serialize_currency_rows(
             metrics["currency_exposure"]
         ),
@@ -362,7 +383,15 @@ class PortfolioAPIView(UserBondQuerysetMixin, APIView):
         """
         Return Portfolio items and backend-calculated metrics.
         """
-        portfolio_analytics = calculate_portfolio_analytics(request.user)
+        portfolio_base_currency = request.query_params.get(
+            "base_currency",
+            "EUR",
+        )
+
+        portfolio_analytics = calculate_portfolio_analytics(
+            user=request.user,
+            portfolio_base_currency=portfolio_base_currency,
+        )
 
         row_serializer = PortfolioRowSerializer(
             portfolio_analytics["rows"],

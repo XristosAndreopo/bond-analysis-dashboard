@@ -5,7 +5,8 @@ This module contains backend-side calculations for portfolio-level bond
 analytics. The frontend should display these results, not calculate them.
 
 The service calculates:
-- portfolio rows with weights
+- portfolio rows with FX-adjusted weights
+- total portfolio value in base currency
 - weighted average YTM
 - weighted current yield
 - weighted modified duration
@@ -20,14 +21,15 @@ The service calculates:
 - risk distribution
 
 Important:
-    FX conversion is not implemented yet. If the portfolio contains multiple
-    currencies, values are grouped by currency and a mixed-currency warning is
-    returned.
+    FX conversion is manual for the MVP. If an FX rate is missing, the service
+    returns warnings and excludes the missing converted amount from base-currency
+    totals until the rate is provided.
 """
 
 from collections import defaultdict
 from decimal import Decimal, InvalidOperation
 
+from bonds.models import FXRate
 from portfolios.models import UserBond
 
 
@@ -72,6 +74,22 @@ def quantize_decimal(value, places="0.000001"):
         return None
 
     return decimal_value.quantize(Decimal(places))
+
+
+def normalize_currency(currency):
+    """
+    Normalize a currency code.
+
+    Args:
+        currency: Currency string.
+
+    Returns:
+        Uppercase 3-letter currency code or empty string.
+    """
+    if not currency:
+        return ""
+
+    return str(currency).upper().strip()
 
 
 def get_active_portfolio_items(user):
@@ -126,23 +144,144 @@ def get_latest_market_data(user_bond):
     return user_bond.latest_market_data
 
 
-def calculate_portfolio_analytics(user):
+def get_fx_rate_to_base(source_currency, portfolio_base_currency):
+    """
+    Get the FX rate used to convert source currency into portfolio base currency.
+
+    Example direct rate:
+        source_currency = USD
+        portfolio_base_currency = EUR
+        FXRate: 1 USD = 0.92 EUR
+        return 0.92
+
+    If no direct rate exists, the service tries to use the inverse rate.
+
+    Args:
+        source_currency: Currency being converted from.
+        portfolio_base_currency: Currency being converted to.
+
+    Returns:
+        Dict with:
+            rate: Decimal or None
+            is_missing: bool
+            method: SAME, DIRECT, INVERSE, MISSING
+    """
+    source_currency = normalize_currency(source_currency)
+    portfolio_base_currency = normalize_currency(portfolio_base_currency)
+
+    if not source_currency or not portfolio_base_currency:
+        return {
+            "rate": None,
+            "is_missing": True,
+            "method": "MISSING",
+        }
+
+    if source_currency == portfolio_base_currency:
+        return {
+            "rate": ONE,
+            "is_missing": False,
+            "method": "SAME",
+        }
+
+    direct_rate = FXRate.objects.filter(
+        base_currency=source_currency,
+        quote_currency=portfolio_base_currency,
+    ).order_by(
+        "-rate_date",
+        "-created_at",
+    ).first()
+
+    if direct_rate is not None:
+        return {
+            "rate": direct_rate.rate,
+            "is_missing": False,
+            "method": "DIRECT",
+        }
+
+    inverse_rate = FXRate.objects.filter(
+        base_currency=portfolio_base_currency,
+        quote_currency=source_currency,
+    ).order_by(
+        "-rate_date",
+        "-created_at",
+    ).first()
+
+    if inverse_rate is not None and inverse_rate.rate != ZERO:
+        return {
+            "rate": ONE / inverse_rate.rate,
+            "is_missing": False,
+            "method": "INVERSE",
+        }
+
+    return {
+        "rate": None,
+        "is_missing": True,
+        "method": "MISSING",
+    }
+
+
+def convert_amount_to_base(amount, source_currency, portfolio_base_currency):
+    """
+    Convert an amount into the portfolio base currency.
+
+    Args:
+        amount: Decimal amount in original currency.
+        source_currency: Original currency.
+        portfolio_base_currency: Target portfolio currency.
+
+    Returns:
+        Dict with converted amount and FX metadata.
+    """
+    decimal_amount = safe_decimal(amount) or ZERO
+    fx_result = get_fx_rate_to_base(
+        source_currency=source_currency,
+        portfolio_base_currency=portfolio_base_currency,
+    )
+
+    if fx_result["is_missing"]:
+        return {
+            "original_value": decimal_amount,
+            "converted_value": None,
+            "fx_rate_to_base": None,
+            "fx_rate_missing": True,
+            "fx_method": fx_result["method"],
+        }
+
+    converted_value = decimal_amount * fx_result["rate"]
+
+    return {
+        "original_value": decimal_amount,
+        "converted_value": quantize_decimal(converted_value, "0.000001"),
+        "fx_rate_to_base": quantize_decimal(fx_result["rate"], "0.00000001"),
+        "fx_rate_missing": False,
+        "fx_method": fx_result["method"],
+    }
+
+
+def calculate_portfolio_analytics(user, portfolio_base_currency="EUR"):
     """
     Calculate full backend portfolio analytics for a user.
 
     Args:
         user: Django user.
+        portfolio_base_currency: Currency used for portfolio-level totals.
 
     Returns:
         Dict with summary, rows, and portfolio metrics.
     """
+    portfolio_base_currency = normalize_currency(portfolio_base_currency) or "EUR"
+
     portfolio_items = list(get_active_portfolio_items(user))
-    normalized_items = build_normalized_items(portfolio_items)
-    total_value = calculate_total_value(normalized_items)
+    normalized_items = build_normalized_items(
+        portfolio_items=portfolio_items,
+        portfolio_base_currency=portfolio_base_currency,
+    )
+    total_value_base = calculate_total_converted_value(normalized_items)
 
     rows = build_portfolio_rows(
         normalized_items=normalized_items,
-        total_value=total_value,
+        total_value_base=total_value_base,
+        portfolio_base_currency=portfolio_base_currency,
     )
 
     normalized_items_with_weights = attach_weights_to_normalized_items(
@@ -152,11 +291,13 @@ def calculate_portfolio_analytics(user):
 
     metrics = build_portfolio_metrics(
         normalized_items=normalized_items_with_weights,
-        total_value=total_value,
+        total_value_base=total_value_base,
+        portfolio_base_currency=portfolio_base_currency,
     )
 
     summary = {
-        "total_value": quantize_decimal(total_value, "0.01") or ZERO,
+        "total_value": quantize_decimal(total_value_base, "0.01") or ZERO,
+        "portfolio_base_currency": portfolio_base_currency,
         "portfolio_duration": quantize_decimal(
             metrics["weighted_modified_duration"],
             "0.000001",
@@ -183,12 +324,13 @@ def calculate_portfolio_analytics(user):
     }
 
 
-def build_normalized_items(portfolio_items):
+def build_normalized_items(portfolio_items, portfolio_base_currency):
     """
     Build normalized item dictionaries used by all calculations.
 
     Args:
         portfolio_items: Iterable of UserBond instances.
+        portfolio_base_currency: Portfolio base currency.
 
     Returns:
         List of normalized dicts.
@@ -198,11 +340,26 @@ def build_normalized_items(portfolio_items):
     for user_bond in portfolio_items:
         analysis = get_latest_analysis(user_bond)
         market_data = get_latest_market_data(user_bond)
+        bond_currency = normalize_currency(user_bond.bond.currency)
 
-        position_value = (
+        original_position_value = (
             safe_decimal(analysis.position_value)
             if analysis is not None
             else safe_decimal(user_bond.position_value)
+        ) or ZERO
+
+        position_conversion = convert_amount_to_base(
+            amount=original_position_value,
+            source_currency=bond_currency,
+            portfolio_base_currency=portfolio_base_currency,
+        )
+
+        estimated_annual_coupon = calculate_estimated_annual_coupon(user_bond)
+
+        coupon_conversion = convert_amount_to_base(
+            amount=estimated_annual_coupon,
+            source_currency=bond_currency,
+            portfolio_base_currency=portfolio_base_currency,
         )
 
         normalized_items.append(
@@ -211,7 +368,15 @@ def build_normalized_items(portfolio_items):
                 "bond": user_bond.bond,
                 "analysis": analysis,
                 "market_data": market_data,
-                "position_value": position_value or ZERO,
+                "original_currency": bond_currency,
+                "portfolio_base_currency": portfolio_base_currency,
+                "original_position_value": original_position_value,
+                "converted_position_value": position_conversion[
+                    "converted_value"
+                ],
+                "fx_rate_to_base": position_conversion["fx_rate_to_base"],
+                "fx_rate_missing": position_conversion["fx_rate_missing"],
+                "fx_method": position_conversion["fx_method"],
                 "modified_duration": safe_decimal(
                     analysis.modified_duration if analysis else None
                 ),
@@ -237,38 +402,45 @@ def build_normalized_items(portfolio_items):
                     if analysis
                     else "Άγνωστο"
                 ),
-                "estimated_annual_coupon": calculate_estimated_annual_coupon(
-                    user_bond
-                ),
+                "estimated_annual_coupon": estimated_annual_coupon,
+                "estimated_annual_coupon_base": coupon_conversion[
+                    "converted_value"
+                ],
+                "coupon_fx_missing": coupon_conversion["fx_rate_missing"],
             }
         )
 
     return normalized_items
 
 
-def calculate_total_value(normalized_items):
+def calculate_total_converted_value(normalized_items):
     """
-    Calculate total portfolio value.
+    Calculate total portfolio value in base currency.
 
     Args:
         normalized_items: Normalized item dicts.
 
     Returns:
-        Decimal total value.
+        Decimal total converted value.
     """
     return sum(
-        item["position_value"] or ZERO
+        item["converted_position_value"] or ZERO
         for item in normalized_items
     )
 
 
-def build_portfolio_rows(normalized_items, total_value):
+def build_portfolio_rows(
+    normalized_items,
+    total_value_base,
+    portfolio_base_currency,
+):
     """
     Build rows consumed by PortfolioRowSerializer.
 
     Args:
         normalized_items: Normalized item dicts.
-        total_value: Total portfolio value.
+        total_value_base: Total portfolio value in base currency.
+        portfolio_base_currency: Portfolio base currency.
 
     Returns:
         List of portfolio row dicts.
@@ -277,10 +449,10 @@ def build_portfolio_rows(normalized_items, total_value):
 
     for normalized_item in normalized_items:
         analysis = normalized_item["analysis"]
-        position_value = normalized_item["position_value"]
+        converted_position_value = normalized_item["converted_position_value"]
 
-        if total_value > ZERO:
-            weight = position_value / total_value
+        if total_value_base > ZERO and converted_position_value is not None:
+            weight = converted_position_value / total_value_base
         else:
             weight = ZERO
 
@@ -310,6 +482,20 @@ def build_portfolio_rows(normalized_items, total_value):
                     "0.000001",
                 )
                 or ZERO,
+                "original_position_value": quantize_decimal(
+                    normalized_item["original_position_value"],
+                    "0.000001",
+                )
+                or ZERO,
+                "original_currency": normalized_item["original_currency"],
+                "converted_position_value": quantize_decimal(
+                    converted_position_value,
+                    "0.000001",
+                ),
+                "portfolio_base_currency": portfolio_base_currency,
+                "fx_rate_to_base": normalized_item["fx_rate_to_base"],
+                "fx_rate_missing": normalized_item["fx_rate_missing"],
+                "fx_method": normalized_item["fx_method"],
             }
         )
 
@@ -341,33 +527,43 @@ def attach_weights_to_normalized_items(normalized_items, rows):
     return normalized_items
 
 
-def build_portfolio_metrics(normalized_items, total_value):
+def build_portfolio_metrics(
+    normalized_items,
+    total_value_base,
+    portfolio_base_currency,
+):
     """
     Build full portfolio metric dictionary.
 
     Args:
         normalized_items: Normalized item dicts.
-        total_value: Decimal total value.
+        total_value_base: Total value in base currency.
+        portfolio_base_currency: Portfolio base currency.
 
     Returns:
         Dict of portfolio metrics.
     """
     currency_exposure = build_currency_exposure(
         normalized_items=normalized_items,
-        total_value=total_value,
+        total_value_base=total_value_base,
     )
 
     coupon_income_by_currency = build_coupon_income_by_currency(
-        normalized_items
+        normalized_items=normalized_items,
+        portfolio_base_currency=portfolio_base_currency,
     )
 
-    has_mixed_currencies = len(currency_exposure) > 1
-    main_currency = currency_exposure[0]["currency"] if currency_exposure else ""
+    missing_fx_rates = build_missing_fx_rate_list(
+        normalized_items=normalized_items,
+        portfolio_base_currency=portfolio_base_currency,
+    )
 
-    estimated_annual_coupon_income = None
+    has_missing_fx_rates = len(missing_fx_rates) > 0
 
-    if len(coupon_income_by_currency) == 1:
-        estimated_annual_coupon_income = coupon_income_by_currency[0]["value"]
+    estimated_annual_coupon_income_base = sum(
+        item["estimated_annual_coupon_base"] or ZERO
+        for item in normalized_items
+    )
 
     weighted_risk_score = calculate_weighted_average(
         normalized_items,
@@ -376,6 +572,8 @@ def build_portfolio_metrics(normalized_items, total_value):
     )
 
     return {
+        "portfolio_base_currency": portfolio_base_currency,
+        "total_value_base": quantize_decimal(total_value_base, "0.01") or ZERO,
         "weighted_average_ytm": calculate_weighted_average(
             normalized_items,
             value_key="ytm",
@@ -396,23 +594,73 @@ def build_portfolio_metrics(normalized_items, total_value):
             normalized_items,
             key="weight",
         ),
-        "estimated_annual_coupon_income": estimated_annual_coupon_income,
+        "estimated_annual_coupon_income": quantize_decimal(
+            estimated_annual_coupon_income_base,
+            "0.01",
+        )
+        or ZERO,
         "estimated_annual_coupon_income_by_currency": coupon_income_by_currency,
-        "main_currency": main_currency,
-        "has_mixed_currencies": has_mixed_currencies,
+        "main_currency": portfolio_base_currency,
+        "has_mixed_currencies": len(currency_exposure) > 1,
+        "has_missing_fx_rates": has_missing_fx_rates,
+        "missing_fx_rates": missing_fx_rates,
         "currency_exposure": currency_exposure,
         "top_position": get_top_position(normalized_items),
         "highest_risk_position": get_highest_risk_position(normalized_items),
         "best_value_position": get_best_value_position(normalized_items),
         "signal_distribution": build_signal_distribution(normalized_items),
         "risk_distribution": build_risk_distribution(normalized_items),
-        "mixed_currency_warning": (
-            "Το Portfolio περιέχει περισσότερα από ένα νομίσματα. "
-            "Τα συνολικά ποσά είναι ονομαστικά μέχρι να προστεθεί FX conversion."
-            if has_mixed_currencies
-            else ""
+        "mixed_currency_warning": build_fx_warning(
+            portfolio_base_currency=portfolio_base_currency,
+            missing_fx_rates=missing_fx_rates,
         ),
     }
+
+
+def build_fx_warning(portfolio_base_currency, missing_fx_rates):
+    """
+    Build warning text for missing FX rates.
+
+    Args:
+        portfolio_base_currency: Portfolio base currency.
+        missing_fx_rates: List of missing currency pairs.
+
+    Returns:
+        Warning string.
+    """
+    if not missing_fx_rates:
+        return ""
+
+    pairs = ", ".join(missing_fx_rates)
+
+    return (
+        "Λείπουν ισοτιμίες FX για μετατροπή σε "
+        f"{portfolio_base_currency}: {pairs}. "
+        "Οι θέσεις χωρίς FX rate δεν συμμετέχουν στο converted total value "
+        "μέχρι να προστεθεί η αντίστοιχη ισοτιμία."
+    )
+
+
+def build_missing_fx_rate_list(normalized_items, portfolio_base_currency):
+    """
+    Build a unique list of missing FX currency pairs.
+
+    Args:
+        normalized_items: Normalized item dicts.
+        portfolio_base_currency: Portfolio base currency.
+
+    Returns:
+        List of pair labels, e.g. ["USD/EUR"].
+    """
+    missing_pairs = set()
+
+    for item in normalized_items:
+        if item["fx_rate_missing"]:
+            missing_pairs.add(
+                f"{item['original_currency']}/{portfolio_base_currency}"
+            )
+
+    return sorted(missing_pairs)
 
 
 def calculate_weighted_average(items, value_key, weight_key):
@@ -483,7 +731,7 @@ def calculate_estimated_annual_coupon(user_bond):
         user_bond: UserBond instance.
 
     Returns:
-        Decimal annual net coupon income.
+        Decimal annual net coupon income in the bond's original currency.
     """
     face_value = safe_decimal(user_bond.bond.face_value)
     coupon_rate = safe_decimal(user_bond.bond.annual_coupon_rate)
@@ -499,72 +747,120 @@ def calculate_estimated_annual_coupon(user_bond):
     return quantize_decimal(gross_coupon - tax_amount, "0.000001") or ZERO
 
 
-def build_currency_exposure(normalized_items, total_value):
+def build_currency_exposure(normalized_items, total_value_base):
     """
     Build currency exposure list.
 
     Args:
         normalized_items: Normalized item dicts.
-        total_value: Total portfolio value.
+        total_value_base: Total converted portfolio value.
 
     Returns:
         List of currency exposure dicts.
     """
-    exposure_by_currency = defaultdict(Decimal)
+    exposure_by_currency = defaultdict(
+        lambda: {
+            "original_value": ZERO,
+            "converted_value": ZERO,
+        }
+    )
 
     for item in normalized_items:
-        currency = item["bond"].currency or "N/A"
-        exposure_by_currency[currency] += item["position_value"] or ZERO
-
-    if total_value == ZERO:
-        return []
+        currency = item["original_currency"] or "N/A"
+        exposure_by_currency[currency]["original_value"] += (
+            item["original_position_value"] or ZERO
+        )
+        exposure_by_currency[currency]["converted_value"] += (
+            item["converted_position_value"] or ZERO
+        )
 
     exposure_rows = []
 
-    for currency, value in exposure_by_currency.items():
+    for currency, values in exposure_by_currency.items():
+        converted_value = values["converted_value"]
+
+        if total_value_base > ZERO:
+            weight = converted_value / total_value_base
+        else:
+            weight = ZERO
+
         exposure_rows.append(
             {
                 "currency": currency,
-                "value": quantize_decimal(value, "0.01") or ZERO,
-                "weight": quantize_decimal(value / total_value, "0.000001")
+                "original_value": quantize_decimal(
+                    values["original_value"],
+                    "0.01",
+                )
                 or ZERO,
+                "converted_value": quantize_decimal(
+                    converted_value,
+                    "0.01",
+                )
+                or ZERO,
+                "weight": quantize_decimal(weight, "0.000001") or ZERO,
             }
         )
 
     return sorted(
         exposure_rows,
-        key=lambda row: row["value"],
+        key=lambda row: row["converted_value"],
         reverse=True,
     )
 
 
-def build_coupon_income_by_currency(normalized_items):
+def build_coupon_income_by_currency(
+    normalized_items,
+    portfolio_base_currency,
+):
     """
-    Build estimated annual coupon income grouped by currency.
+    Build estimated annual coupon income grouped by original currency.
 
     Args:
         normalized_items: Normalized item dicts.
+        portfolio_base_currency: Portfolio base currency.
 
     Returns:
         List of coupon income rows.
     """
-    income_by_currency = defaultdict(Decimal)
+    income_by_currency = defaultdict(
+        lambda: {
+            "original_value": ZERO,
+            "converted_value": ZERO,
+        }
+    )
 
     for item in normalized_items:
-        currency = item["bond"].currency or "N/A"
-        income_by_currency[currency] += item["estimated_annual_coupon"] or ZERO
+        currency = item["original_currency"] or "N/A"
+        income_by_currency[currency]["original_value"] += (
+            item["estimated_annual_coupon"] or ZERO
+        )
+        income_by_currency[currency]["converted_value"] += (
+            item["estimated_annual_coupon_base"] or ZERO
+        )
 
-    rows = [
-        {
-            "currency": currency,
-            "value": quantize_decimal(value, "0.01") or ZERO,
-        }
-        for currency, value in income_by_currency.items()
-    ]
+    rows = []
+
+    for currency, values in income_by_currency.items():
+        rows.append(
+            {
+                "currency": currency,
+                "original_value": quantize_decimal(
+                    values["original_value"],
+                    "0.01",
+                )
+                or ZERO,
+                "converted_value": quantize_decimal(
+                    values["converted_value"],
+                    "0.01",
+                )
+                or ZERO,
+                "portfolio_base_currency": portfolio_base_currency,
+            }
+        )
 
     return sorted(
         rows,
-        key=lambda row: row["value"],
+        key=lambda row: row["converted_value"],
         reverse=True,
     )
 
