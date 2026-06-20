@@ -1,0 +1,6 @@
+isin,name,issuer,country,currency,coupon_rate,maturity_date,credit_rating,rating_source,market_price,ytm,duration,source,source_url
+XXCSV000001,CSV United States Treasury Note 4.125% 2031,United States Treasury,US,USD,4.125,2031-05-31,AA+,CSV Sample,99.8500,4.1000,4.4500,csv_provider,
+XXCSV000002,CSV Hellenic Republic Government Bond 3.875% 2028,Hellenic Republic,GR,EUR,3.875,2028-06-15,BBB-,CSV Sample,101.2000,3.5200,2.1000,csv_provider,
+XXCSV000003,CSV European Corporate Bond 4.500% 2030,European Corporate Issuer,DE,EUR,4.500,2030-09-20,A-,CSV Sample,98.7000,4.8200,3.8500,csv_provider,
+XXCSV000004,CSV High Yield Corporate Bond 6.750% 2029,High Yield Issuer,US,USD,6.750,2029-11-10,BB+,CSV Sample,94.3000,7.9000,3.3000,csv_provider,
+XXCSV000005,CSV Matured Government Bond 2.000% 2020,Old Government Issuer,GR,EUR,2.000,2020-01-15,A,CSV Sample,100.0000,0.0000,0.0000,csv_provider,

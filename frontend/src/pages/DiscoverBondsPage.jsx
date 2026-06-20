@@ -4,6 +4,7 @@
  * Displays bond candidates produced by the backend discovery engine.
  *
  * The frontend does not invent bond data. It only:
+ * - lets the user choose discovery filters
  * - asks the backend to run discovery
  * - displays validated candidates
  * - displays backend-calculated preview risk/signal
@@ -31,7 +32,51 @@ import {
   formatPercent,
 } from "../utils/formatters";
 
+const SOURCE_OPTIONS = [
+  { value: "static_provider", label: "Static Provider" },
+  { value: "csv_provider", label: "CSV Provider" },
+];
+
+const MINIMUM_RATING_OPTIONS = [
+  "BBB-",
+  "BBB",
+  "BBB+",
+  "A-",
+  "A",
+  "A+",
+  "AA-",
+  "AA",
+  "AA+",
+  "AAA",
+];
+
+const CURRENCY_OPTIONS = [
+  { value: "", label: "All currencies" },
+  { value: "EUR", label: "EUR" },
+  { value: "USD", label: "USD" },
+  { value: "GBP", label: "GBP" },
+];
+
+const COUNTRY_OPTIONS = [
+  { value: "", label: "All countries" },
+  { value: "GR", label: "Greece" },
+  { value: "US", label: "United States" },
+  { value: "DE", label: "Germany" },
+  { value: "FR", label: "France" },
+  { value: "IT", label: "Italy" },
+  { value: "ES", label: "Spain" },
+  { value: "NL", label: "Netherlands" },
+];
+
+const DEFAULT_FILTERS = {
+  source: "static_provider",
+  minRating: "BBB-",
+  currency: "",
+  country: "",
+};
+
 function DiscoverBondsPage() {
+  const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [candidates, setCandidates] = useState([]);
   const [lastDiscoveryRun, setLastDiscoveryRun] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -59,13 +104,35 @@ function DiscoverBondsPage() {
     }
   }
 
+  function handleFilterChange(event) {
+    const { name, value } = event.target;
+
+    setFilters((currentFilters) => ({
+      ...currentFilters,
+      [name]: value,
+    }));
+  }
+
+  function handleResetFilters() {
+    setFilters(DEFAULT_FILTERS);
+  }
+
+  function buildDiscoveryPayload() {
+    return {
+      source: filters.source,
+      min_rating: filters.minRating,
+      currencies: filters.currency ? [filters.currency] : [],
+      countries: filters.country ? [filters.country] : [],
+    };
+  }
+
   async function handleRunDiscovery() {
     setIsRunningDiscovery(true);
     setSuccessMessage("");
     setErrorMessage("");
 
     try {
-      const result = await runBondDiscovery();
+      const result = await runBondDiscovery(buildDiscoveryPayload());
 
       setLastDiscoveryRun(result.run || null);
       setCandidates(Array.isArray(result.candidates) ? result.candidates : []);
@@ -132,7 +199,89 @@ function DiscoverBondsPage() {
           <Link className="secondary-button" to="/watchlist">
             My Watchlist
           </Link>
+        </div>
+      </div>
 
+      <div className="disclaimer-box">
+        Discovery candidates are educational analytical data only. They are not
+        investment advice and they do not represent a recommendation to buy or
+        sell securities.
+      </div>
+
+      <div className="toolbar-card">
+        <div className="section-header">
+          <div>
+            <h2>Discovery Filters</h2>
+            <p>
+              Choose the source, minimum rating, currency and country filters
+              before running discovery.
+            </p>
+          </div>
+        </div>
+
+        <div className="form-grid">
+          <label>
+            Source
+            <select
+              name="source"
+              value={filters.source}
+              onChange={handleFilterChange}
+            >
+              {SOURCE_OPTIONS.map((source) => (
+                <option value={source.value} key={source.value}>
+                  {source.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            Minimum Rating
+            <select
+              name="minRating"
+              value={filters.minRating}
+              onChange={handleFilterChange}
+            >
+              {MINIMUM_RATING_OPTIONS.map((rating) => (
+                <option value={rating} key={rating}>
+                  {rating}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            Currency
+            <select
+              name="currency"
+              value={filters.currency}
+              onChange={handleFilterChange}
+            >
+              {CURRENCY_OPTIONS.map((currency) => (
+                <option value={currency.value} key={currency.value}>
+                  {currency.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            Country
+            <select
+              name="country"
+              value={filters.country}
+              onChange={handleFilterChange}
+            >
+              {COUNTRY_OPTIONS.map((country) => (
+                <option value={country.value} key={country.value}>
+                  {country.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="form-actions">
           <button
             type="button"
             className="primary-button"
@@ -141,13 +290,16 @@ function DiscoverBondsPage() {
           >
             {isRunningDiscovery ? "Running..." : "Run Discovery"}
           </button>
-        </div>
-      </div>
 
-      <div className="disclaimer-box">
-        Discovery candidates are educational analytical data only. They are not
-        investment advice and they do not represent a recommendation to buy or
-        sell securities.
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={handleResetFilters}
+            disabled={isRunningDiscovery}
+          >
+            Reset Filters
+          </button>
+        </div>
       </div>
 
       {errorMessage && <div className="error-box">{errorMessage}</div>}
@@ -209,7 +361,8 @@ function DiscoverBondsPage() {
                 {candidates.length === 0 ? (
                   <tr>
                     <td colSpan="15">
-                      No candidates are available. Press Run Discovery.
+                      No candidates are available. Adjust filters or press Run
+                      Discovery.
                     </td>
                   </tr>
                 ) : (

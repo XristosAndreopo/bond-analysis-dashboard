@@ -397,16 +397,27 @@ class RunBondDiscoverySerializer(serializers.Serializer):
         """
         Validate discovery source.
 
-        MVP supports only static_provider.
+        Supported MVP sources:
+        - static_provider
+        - csv_provider
         """
         normalized_value = value.strip().lower()
 
-        if normalized_value != "static_provider":
+        supported_sources = [
+            "static_provider",
+            "csv_provider",
+        ]
+
+        if normalized_value not in supported_sources:
+            supported_text = ", ".join(supported_sources)
+
             raise serializers.ValidationError(
-                "Only static_provider is supported in the MVP."
+                f"Supported discovery sources: {supported_text}."
             )
 
-        return normalized_value
+        return normalized_value    
+
+
 
     def validate_min_rating(self, value):
         """
