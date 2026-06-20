@@ -5,13 +5,20 @@ This module contains:
 - Bond master data
 - Bond market data
 - FX rates used for portfolio currency conversion
+- Bond discovery run records
+- Bond discovery candidate records
 
 FX conversion is intentionally manual for the MVP. Later, FX rates can be
 loaded automatically from an external data provider.
+
+The discovery models do not use AI as a data source. They only store validated
+candidate data coming from a provider such as a static provider, CSV import, or
+future external API.
 """
 
 from decimal import Decimal
 
+from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
@@ -257,5 +264,319 @@ class FXRate(models.Model):
         """
         self.base_currency = self.base_currency.upper()
         self.quote_currency = self.quote_currency.upper()
+
+        super().save(*args, **kwargs)
+
+
+class DiscoveryRun(models.Model):
+    """
+    Stores one bond discovery execution for one user.
+
+    A discovery run records:
+    - who started the discovery
+    - which provider/source was used
+    - what filters were applied
+    - how many candidates were found, saved, or skipped
+
+    The run does not perform analysis by itself. It only tracks the discovery
+    process that creates BondCandidate records.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Pending"
+        RUNNING = "RUNNING", "Running"
+        COMPLETED = "COMPLETED", "Completed"
+        FAILED = "FAILED", "Failed"
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="bond_discovery_runs",
+    )
+    source = models.CharField(
+        max_length=100,
+        default="static_provider",
+        help_text="Discovery provider name, for example static_provider or csv_provider.",
+    )
+    min_rating = models.CharField(
+        max_length=20,
+        default="BBB-",
+        help_text="Minimum accepted credit rating for this run.",
+    )
+    currencies = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Optional currency filters used by the discovery run.",
+    )
+    countries = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Optional country filters used by the discovery run.",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+        db_index=True,
+    )
+    started_at = models.DateTimeField(
+        default=timezone.now,
+    )
+    finished_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+    total_found = models.PositiveIntegerField(
+        default=0,
+        help_text="Raw candidates returned by the provider.",
+    )
+    total_saved = models.PositiveIntegerField(
+        default=0,
+        help_text="Candidates saved after validation and filtering.",
+    )
+    total_skipped = models.PositiveIntegerField(
+        default=0,
+        help_text="Candidates skipped due to validation, filtering, or duplicates.",
+    )
+    error_message = models.TextField(
+        blank=True,
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+    )
+
+    class Meta:
+        ordering = ["-started_at", "-created_at"]
+        verbose_name = "Discovery Run"
+        verbose_name_plural = "Discovery Runs"
+
+    def __str__(self):
+        """
+        Return a readable representation of the discovery run.
+        """
+        return (
+            f"{self.user} - {self.source} - "
+            f"{self.status} - {self.started_at:%Y-%m-%d %H:%M}"
+        )
+
+    def mark_running(self):
+        """
+        Mark the discovery run as running.
+        """
+        self.status = self.Status.RUNNING
+        self.started_at = timezone.now()
+        self.error_message = ""
+        self.save(
+            update_fields=[
+                "status",
+                "started_at",
+                "error_message",
+                "updated_at",
+            ]
+        )
+
+    def mark_completed(self, total_found, total_saved, total_skipped):
+        """
+        Mark the discovery run as completed and store run totals.
+
+        Args:
+            total_found: Number of raw provider candidates.
+            total_saved: Number of saved candidates.
+            total_skipped: Number of skipped candidates.
+        """
+        self.status = self.Status.COMPLETED
+        self.finished_at = timezone.now()
+        self.total_found = total_found
+        self.total_saved = total_saved
+        self.total_skipped = total_skipped
+        self.error_message = ""
+        self.save(
+            update_fields=[
+                "status",
+                "finished_at",
+                "total_found",
+                "total_saved",
+                "total_skipped",
+                "error_message",
+                "updated_at",
+            ]
+        )
+
+    def mark_failed(self, error_message):
+        """
+        Mark the discovery run as failed.
+
+        Args:
+            error_message: Human-readable error message.
+        """
+        self.status = self.Status.FAILED
+        self.finished_at = timezone.now()
+        self.error_message = str(error_message)
+        self.save(
+            update_fields=[
+                "status",
+                "finished_at",
+                "error_message",
+                "updated_at",
+            ]
+        )
+
+
+class BondCandidate(models.Model):
+    """
+    Stores one discovered bond candidate for review.
+
+    A candidate is not automatically a Bond master record. It becomes part of
+    the user's Watchlist only after the user explicitly chooses Add to Watchlist.
+
+    Candidates are user-specific because each user has a separate Watchlist and
+    Portfolio.
+    """
+
+    class Status(models.TextChoices):
+        NEW = "NEW", "New"
+        REVIEWED = "REVIEWED", "Reviewed"
+        ADDED_TO_WATCHLIST = "ADDED_TO_WATCHLIST", "Added to Watchlist"
+        IGNORED = "IGNORED", "Ignored"
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="bond_candidates",
+    )
+    discovery_run = models.ForeignKey(
+        DiscoveryRun,
+        on_delete=models.CASCADE,
+        related_name="candidates",
+    )
+    isin = models.CharField(
+        max_length=20,
+        db_index=True,
+        help_text="International Securities Identification Number.",
+    )
+    name = models.CharField(
+        max_length=255,
+    )
+    issuer = models.CharField(
+        max_length=255,
+    )
+    country = models.CharField(
+        max_length=2,
+        blank=True,
+        help_text="Issuer country code, for example US or GR.",
+    )
+    currency = models.CharField(
+        max_length=3,
+        default="EUR",
+    )
+    coupon_rate = models.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        validators=[
+            MinValueValidator(Decimal("0.0000")),
+            MaxValueValidator(Decimal("100.0000")),
+        ],
+        help_text="Annual coupon rate as percentage. Example: 4.125 means 4.125%.",
+    )
+    maturity_date = models.DateField(
+        db_index=True,
+    )
+    credit_rating = models.CharField(
+        max_length=20,
+        db_index=True,
+    )
+    rating_source = models.CharField(
+        max_length=100,
+        blank=True,
+    )
+    market_price = models.DecimalField(
+        max_digits=14,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.0000"))],
+    )
+    ytm = models.DecimalField(
+        max_digits=9,
+        decimal_places=5,
+        null=True,
+        blank=True,
+        validators=[
+            MinValueValidator(Decimal("-100.00000")),
+            MaxValueValidator(Decimal("100.00000")),
+        ],
+        help_text="Yield to maturity as percentage.",
+    )
+    duration = models.DecimalField(
+        max_digits=12,
+        decimal_places=6,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.000000"))],
+        help_text="Modified or approximate duration if provided by the source.",
+    )
+    source = models.CharField(
+        max_length=100,
+        default="static_provider",
+    )
+    source_url = models.URLField(
+        max_length=500,
+        blank=True,
+    )
+    ai_summary = models.TextField(
+        blank=True,
+        help_text="Optional future AI-generated summary based only on validated data.",
+    )
+    ai_reasoning = models.TextField(
+        blank=True,
+        help_text="Optional future AI-generated reasoning based only on validated data.",
+    )
+    status = models.CharField(
+        max_length=30,
+        choices=Status.choices,
+        default=Status.NEW,
+        db_index=True,
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+    )
+
+    class Meta:
+        ordering = ["maturity_date", "isin"]
+        verbose_name = "Bond Candidate"
+        verbose_name_plural = "Bond Candidates"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "isin"],
+                name="unique_bond_candidate_per_user_isin",
+            ),
+        ]
+
+    def __str__(self):
+        """
+        Return a readable representation of the bond candidate.
+        """
+        return f"{self.user} - {self.isin} - {self.status}"
+
+    def save(self, *args, **kwargs):
+        """
+        Normalize key text fields before saving.
+        """
+        self.isin = self.isin.upper().strip()
+        self.currency = self.currency.upper().strip()
+
+        if self.country:
+            self.country = self.country.upper().strip()
+
+        if self.credit_rating:
+            self.credit_rating = self.credit_rating.upper().strip()
 
         super().save(*args, **kwargs)

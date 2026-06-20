@@ -6,11 +6,27 @@ This module contains serializers for:
 - Bond market data
 - FX rates
 - FX live update requests
+- Bond discovery runs
+- Bond discovery candidates
+
+Discovery serializers expose provider-validated candidate data. They do not
+trigger AI reasoning and they do not treat AI as a data source.
 """
 
 from rest_framework import serializers
 
-from .models import Bond, BondMarketData, FXRate
+from bonds.discovery.rating_utils import (
+    INVESTMENT_GRADE_MIN_RATING,
+    RatingError,
+    normalize_rating,
+)
+from .models import (
+    Bond,
+    BondCandidate,
+    BondMarketData,
+    DiscoveryRun,
+    FXRate,
+)
 
 
 class BondSerializer(serializers.ModelSerializer):
@@ -195,3 +211,197 @@ class FXRateUpdateRequestSerializer(serializers.Serializer):
                 )
 
         return normalized_currencies
+
+
+class DiscoveryRunSerializer(serializers.ModelSerializer):
+    """
+    Read serializer for bond discovery runs.
+
+    A discovery run shows one execution of the discovery engine for one user.
+    """
+
+    status_label = serializers.CharField(
+        source="get_status_display",
+        read_only=True,
+    )
+    username = serializers.CharField(
+        source="user.username",
+        read_only=True,
+    )
+
+    class Meta:
+        model = DiscoveryRun
+        fields = [
+            "id",
+            "username",
+            "source",
+            "min_rating",
+            "currencies",
+            "countries",
+            "status",
+            "status_label",
+            "started_at",
+            "finished_at",
+            "total_found",
+            "total_saved",
+            "total_skipped",
+            "error_message",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+
+class BondCandidateSerializer(serializers.ModelSerializer):
+    """
+    Read serializer for discovered bond candidates.
+
+    Candidates are user-specific and become Watchlist items only when the user
+    explicitly chooses Add to Watchlist.
+    """
+
+    status_label = serializers.CharField(
+        source="get_status_display",
+        read_only=True,
+    )
+    username = serializers.CharField(
+        source="user.username",
+        read_only=True,
+    )
+    discovery_run_id = serializers.IntegerField(
+        source="discovery_run.id",
+        read_only=True,
+    )
+
+    class Meta:
+        model = BondCandidate
+        fields = [
+            "id",
+            "username",
+            "discovery_run_id",
+            "isin",
+            "name",
+            "issuer",
+            "country",
+            "currency",
+            "coupon_rate",
+            "maturity_date",
+            "credit_rating",
+            "rating_source",
+            "market_price",
+            "ytm",
+            "duration",
+            "source",
+            "source_url",
+            "ai_summary",
+            "ai_reasoning",
+            "status",
+            "status_label",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+
+class RunBondDiscoverySerializer(serializers.Serializer):
+    """
+    Serializer for running bond discovery.
+
+    Expected payload:
+        {
+            "source": "static_provider",
+            "min_rating": "BBB-",
+            "currencies": ["USD", "EUR"],
+            "countries": ["US", "GR"]
+        }
+
+    All fields are optional for MVP. If omitted:
+        source = static_provider
+        min_rating = BBB-
+        currencies = []
+        countries = []
+    """
+
+    source = serializers.CharField(
+        max_length=100,
+        required=False,
+        default="static_provider",
+    )
+    min_rating = serializers.CharField(
+        max_length=20,
+        required=False,
+        default=INVESTMENT_GRADE_MIN_RATING,
+    )
+    currencies = serializers.ListField(
+        child=serializers.CharField(max_length=3),
+        required=False,
+        allow_empty=True,
+    )
+    countries = serializers.ListField(
+        child=serializers.CharField(max_length=2),
+        required=False,
+        allow_empty=True,
+    )
+
+    def validate_source(self, value):
+        """
+        Validate provider source.
+
+        The MVP supports only the static provider. CSV/API providers can be
+        added later without changing the frontend contract.
+        """
+        normalized_value = value.strip()
+
+        if normalized_value != "static_provider":
+            raise serializers.ValidationError(
+                "Only static_provider is supported in the MVP."
+            )
+
+        return normalized_value
+
+    def validate_min_rating(self, value):
+        """
+        Validate and normalize minimum credit rating.
+        """
+        try:
+            return normalize_rating(value)
+        except RatingError as exc:
+            raise serializers.ValidationError(str(exc)) from exc
+
+    def validate_currencies(self, value):
+        """
+        Validate and normalize currency filters.
+        """
+        normalized_currencies = []
+
+        for currency in value:
+            normalized_currency = currency.upper().strip()
+
+            if len(normalized_currency) != 3:
+                raise serializers.ValidationError(
+                    "Each currency must be a 3-letter code."
+                )
+
+            if normalized_currency not in normalized_currencies:
+                normalized_currencies.append(normalized_currency)
+
+        return normalized_currencies
+
+    def validate_countries(self, value):
+        """
+        Validate and normalize country filters.
+        """
+        normalized_countries = []
+
+        for country in value:
+            normalized_country = country.upper().strip()
+
+            if len(normalized_country) != 2:
+                raise serializers.ValidationError(
+                    "Each country must be a 2-letter code."
+                )
+
+            if normalized_country not in normalized_countries:
+                normalized_countries.append(normalized_country)
+
+        return normalized_countries

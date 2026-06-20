@@ -1,32 +1,49 @@
 """
-API views for bonds, market data, FX rates, and live FX updates.
+API views for bonds, market data, FX rates, live FX updates, and discovery.
 
 This module exposes API endpoints for:
 - bond master data
 - bond market data
 - manual FX rates
 - live FX rate update action
+- bond discovery candidates
 
 Market data and FX rates use an upsert-style behavior. If a record already
 exists for the same unique fields, it is updated instead of returning a
 duplicate unique constraint error.
+
+The discovery endpoints are data-driven. They do not use AI as a source of
+bond data. They only expose candidates produced by the backend discovery
+service from validated provider data.
 """
 
 from django.db.models import Q
 from rest_framework import status
+from rest_framework.decorators import action
+from rest_framework.mixins import ListModelMixin
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.viewsets import ModelViewSet
+from rest_framework.viewsets import GenericViewSet, ModelViewSet
 
+from bonds.discovery.discovery_service import (
+    DiscoveryServiceError,
+    add_candidate_to_watchlist,
+    get_visible_candidates,
+    ignore_candidate,
+    run_bond_discovery,
+)
 from bonds.fx_services import FXRateUpdateError, update_latest_fx_rates
 
-from .models import Bond, BondMarketData, FXRate
+from .models import Bond, BondCandidate, BondMarketData, FXRate
 from .serializers import (
+    BondCandidateSerializer,
     BondMarketDataSerializer,
     BondSerializer,
+    DiscoveryRunSerializer,
     FXRateSerializer,
     FXRateUpdateRequestSerializer,
+    RunBondDiscoverySerializer,
 )
 
 
@@ -294,6 +311,168 @@ class FXRateUpdateAPIView(APIView):
             {
                 "updated": updated_rows,
                 "errors": result["errors"],
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class BondCandidateDiscoveryViewSet(ListModelMixin, GenericViewSet):
+    """
+    API endpoint for Watchlist bond discovery.
+
+    Endpoints:
+        GET  /api/discover-bonds/
+        POST /api/discover-bonds/run/
+        POST /api/discover-bonds/<id>/add-to-watchlist/
+        POST /api/discover-bonds/<id>/ignore/
+
+    The list endpoint returns only visible candidates:
+    - owned by the current user
+    - status NEW or REVIEWED
+    - not already active in Portfolio
+    - not already active in Watchlist
+    - not ignored
+    - not already added to Watchlist
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = BondCandidateSerializer
+
+    def get_queryset(self):
+        """
+        Return visible discovery candidates for the authenticated user.
+        """
+        return get_visible_candidates(
+            user=self.request.user,
+        ).select_related(
+            "user",
+            "discovery_run",
+        )
+
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="run",
+    )
+    def run(self, request):
+        """
+        Run the discovery engine for the authenticated user.
+
+        Request body is optional for MVP.
+
+        Example:
+            {
+                "source": "static_provider",
+                "min_rating": "BBB-",
+                "currencies": ["USD", "EUR"],
+                "countries": ["US", "GR"]
+            }
+        """
+        serializer = RunBondDiscoverySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            discovery_run = run_bond_discovery(
+                user=request.user,
+                source=serializer.validated_data.get("source"),
+                min_rating=serializer.validated_data.get("min_rating"),
+                currencies=serializer.validated_data.get("currencies", []),
+                countries=serializer.validated_data.get("countries", []),
+            )
+        except DiscoveryServiceError as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        visible_candidates = self.get_queryset()
+
+        return Response(
+            {
+                "run": DiscoveryRunSerializer(discovery_run).data,
+                "candidates": BondCandidateSerializer(
+                    visible_candidates,
+                    many=True,
+                ).data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="add-to-watchlist",
+    )
+    def add_to_watchlist(self, request, pk=None):
+        """
+        Add a discovery candidate to the user's Watchlist.
+
+        The service:
+        - creates the Bond master record if needed
+        - creates market data if candidate market price exists
+        - creates or reactivates a WATCHLIST UserBond
+        - marks the candidate as ADDED_TO_WATCHLIST
+        """
+        try:
+            user_bond = add_candidate_to_watchlist(
+                user=request.user,
+                candidate_id=pk,
+            )
+        except BondCandidate.DoesNotExist:
+            return Response(
+                {
+                    "detail": "Candidate was not found.",
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except DiscoveryServiceError as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            {
+                "detail": "Candidate added to Watchlist.",
+                "user_bond_id": user_bond.id,
+                "bond_id": user_bond.bond_id,
+                "isin": user_bond.bond.isin,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="ignore",
+    )
+    def ignore(self, request, pk=None):
+        """
+        Mark a discovery candidate as ignored.
+
+        Ignored candidates are excluded from Discover Bonds.
+        """
+        try:
+            candidate = ignore_candidate(
+                user=request.user,
+                candidate_id=pk,
+            )
+        except BondCandidate.DoesNotExist:
+            return Response(
+                {
+                    "detail": "Candidate was not found.",
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        return Response(
+            {
+                "detail": "Candidate ignored.",
+                "candidate": BondCandidateSerializer(candidate).data,
             },
             status=status.HTTP_200_OK,
         )
