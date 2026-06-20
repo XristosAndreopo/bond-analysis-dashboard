@@ -4,15 +4,12 @@
  * Displays bonds owned by the user and backend-calculated portfolio-level
  * financial metrics using FX conversion into a selected base currency.
  *
- * The page also allows the user to trigger live FX rate updates from the
- * frontend. The backend fetches FX rates, stores them in the database, and then
- * the Portfolio is reloaded with the latest converted values.
+ * FX rates are managed centrally from the FX Rates page.
  */
 
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { updateFXRates } from "../api/bondsApi";
 import { fetchPortfolio } from "../api/portfolioApi";
 import Disclaimer from "../components/Disclaimer";
 import RiskBadge from "../components/RiskBadge";
@@ -30,8 +27,6 @@ function PortfolioPage() {
   const [portfolioData, setPortfolioData] = useState(null);
   const [baseCurrency, setBaseCurrency] = useState("EUR");
   const [errorMessage, setErrorMessage] = useState("");
-  const [isUpdatingFx, setIsUpdatingFx] = useState(false);
-  const [fxUpdateMessage, setFxUpdateMessage] = useState("");
 
   useEffect(() => {
     async function loadPortfolio() {
@@ -50,7 +45,6 @@ function PortfolioPage() {
 
   function handleBaseCurrencyChange(event) {
     setBaseCurrency(event.target.value);
-    setFxUpdateMessage("");
   }
 
   if (errorMessage) {
@@ -69,47 +63,6 @@ function PortfolioPage() {
     metrics.portfolio_base_currency ||
     summary.portfolio_base_currency ||
     baseCurrency;
-
-  async function handleUpdateFXRates() {
-    setIsUpdatingFx(true);
-    setFxUpdateMessage("");
-
-    try {
-      const currenciesInPortfolio = rows
-        .map((row) => row.original_currency || row.user_bond?.bond?.currency)
-        .filter(Boolean);
-
-      const uniqueCurrencies = [...new Set(currenciesInPortfolio)];
-
-      const baseCurrencies = uniqueCurrencies.filter(
-        (currency) => currency !== baseCurrency
-      );
-
-      const fallbackCurrencies =
-        baseCurrencies.length > 0
-          ? baseCurrencies
-          : ["USD", "GBP", "CHF", "JPY"];
-
-      const result = await updateFXRates({
-        quote_currency: baseCurrency,
-        base_currencies: fallbackCurrencies,
-      });
-
-      const updatedCount = result.updated?.length || 0;
-      const errorCount = result.errors?.length || 0;
-
-      setFxUpdateMessage(
-        `FX update completed. Updated: ${updatedCount}, Errors: ${errorCount}.`
-      );
-
-      const refreshedPortfolio = await fetchPortfolio(baseCurrency);
-      setPortfolioData(refreshedPortfolio);
-    } catch (error) {
-      setFxUpdateMessage("FX update failed. Έλεγξε το backend terminal.");
-    } finally {
-      setIsUpdatingFx(false);
-    }
-  }
 
   return (
     <section className="page-section">
@@ -134,15 +87,6 @@ function PortfolioPage() {
             </select>
           </label>
 
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={handleUpdateFXRates}
-            disabled={isUpdatingFx}
-          >
-            {isUpdatingFx ? "Updating FX..." : "Update FX Rates"}
-          </button>
-
           <Link
             to="/positions/new?type=PORTFOLIO"
             className="primary-link-button"
@@ -157,8 +101,6 @@ function PortfolioPage() {
       {metrics.mixed_currency_warning && (
         <div className="warning-box">{metrics.mixed_currency_warning}</div>
       )}
-
-      {fxUpdateMessage && <div className="info-box">{fxUpdateMessage}</div>}
 
       <div className="summary-grid">
         <div className="summary-card">
@@ -263,37 +205,6 @@ function PortfolioPage() {
             portfolioBaseCurrency={portfolioBaseCurrency}
             emptyMessage="Δεν υπάρχει ακόμα currency exposure."
           />
-        </PortfolioInsightCard>
-      </div>
-
-      <div className="portfolio-insights-grid">
-        <PortfolioInsightCard title="Annual Coupon Income by Currency">
-          <CouponIncomeList
-            items={metrics.estimated_annual_coupon_income_by_currency}
-            portfolioBaseCurrency={portfolioBaseCurrency}
-            emptyMessage="Δεν υπάρχει ακόμα εκτιμώμενο εισόδημα κουπονιών."
-          />
-        </PortfolioInsightCard>
-
-        <PortfolioInsightCard title="Signal Distribution">
-          <DistributionList
-            items={metrics.signal_distribution}
-            emptyMessage="Δεν υπάρχουν ακόμα signals."
-          />
-        </PortfolioInsightCard>
-
-        <PortfolioInsightCard title="Risk Distribution">
-          <DistributionList
-            items={metrics.risk_distribution}
-            emptyMessage="Δεν υπάρχουν ακόμα risk levels."
-          />
-        </PortfolioInsightCard>
-
-        <PortfolioInsightCard title="Portfolio Risk Level">
-          <div className="position-insight-metric">
-            <span>Risk Level</span>
-            <strong>{summary.portfolio_risk_level_label || "-"}</strong>
-          </div>
         </PortfolioInsightCard>
       </div>
 
@@ -452,51 +363,6 @@ function ExposureList({ items, portfolioBaseCurrency, emptyMessage }) {
           </div>
 
           <span>{formatRatioAsPercent(item.weight, 2)}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function CouponIncomeList({ items, portfolioBaseCurrency, emptyMessage }) {
-  if (!items || items.length === 0) {
-    return <p className="muted-text">{emptyMessage}</p>;
-  }
-
-  return (
-    <div className="exposure-list">
-      {items.map((item) => (
-        <div className="exposure-row" key={item.currency}>
-          <div>
-            <strong>{item.currency}</strong>
-            <span>
-              {formatMoney(item.original_value, item.currency, 2)} →{" "}
-              {formatMoney(item.converted_value, portfolioBaseCurrency, 2)}
-            </span>
-          </div>
-
-          <span>Annual coupon</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function DistributionList({ items, emptyMessage }) {
-  if (!items || items.length === 0) {
-    return <p className="muted-text">{emptyMessage}</p>;
-  }
-
-  return (
-    <div className="exposure-list">
-      {items.map((item) => (
-        <div className="exposure-row" key={item.key}>
-          <div>
-            <strong>{item.label}</strong>
-            <span>{item.key}</span>
-          </div>
-
-          <span>{item.count}</span>
         </div>
       ))}
     </div>

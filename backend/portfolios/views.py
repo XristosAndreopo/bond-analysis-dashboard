@@ -9,8 +9,7 @@ The API is designed around a simple user flow:
   duplicated.
 - Analysis is recalculated automatically through model signals.
 
-Portfolio financial metrics are calculated in the backend through
-analytics.portfolio_services.
+Portfolio and Watchlist financial values are calculated in the backend.
 """
 
 from django.db import transaction
@@ -22,12 +21,14 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from analytics.portfolio_services import calculate_portfolio_analytics
+from analytics.watchlist_services import calculate_watchlist_analytics
 from portfolios.models import UserBond
 from portfolios.serializers import (
     MoveUserBondSerializer,
     PortfolioRowSerializer,
     UserBondReadSerializer,
     UserBondWriteSerializer,
+    WatchlistRowSerializer,
 )
 from portfolios.services import calculate_portfolio_summary
 
@@ -41,12 +42,6 @@ DISCLAIMER_TEXT = (
 def get_opposite_holding_type(holding_type):
     """
     Return the opposite holding type.
-
-    Args:
-        holding_type: Current target holding type.
-
-    Returns:
-        The opposite UserBond holding type.
     """
     if holding_type == UserBond.HoldingType.PORTFOLIO:
         return UserBond.HoldingType.WATCHLIST
@@ -57,12 +52,6 @@ def get_opposite_holding_type(holding_type):
 def decimal_to_string(value):
     """
     Convert a Decimal-like value to string for stable JSON output.
-
-    Args:
-        value: Decimal-like value.
-
-    Returns:
-        String value or None.
     """
     if value is None:
         return None
@@ -73,12 +62,6 @@ def decimal_to_string(value):
 def serialize_distribution(distribution_rows):
     """
     Serialize signal/risk distribution rows.
-
-    Args:
-        distribution_rows: Distribution rows from service.
-
-    Returns:
-        List of serializable dictionaries.
     """
     return [
         {
@@ -93,12 +76,6 @@ def serialize_distribution(distribution_rows):
 def serialize_currency_rows(rows):
     """
     Serialize currency exposure or coupon-income rows.
-
-    Args:
-        rows: Currency rows from service.
-
-    Returns:
-        List of serializable dictionaries.
     """
     serialized_rows = []
 
@@ -136,13 +113,6 @@ def serialize_currency_rows(rows):
 def serialize_position_insight(normalized_item, metric_key):
     """
     Serialize a portfolio insight position.
-
-    Args:
-        normalized_item: Normalized portfolio item from service.
-        metric_key: Metric key to expose.
-
-    Returns:
-        Serialized insight dict or None.
     """
     if normalized_item is None:
         return None
@@ -156,12 +126,6 @@ def serialize_position_insight(normalized_item, metric_key):
 def serialize_portfolio_metrics(metrics):
     """
     Serialize portfolio metrics calculated by the backend.
-
-    Args:
-        metrics: Metrics dictionary from portfolio service.
-
-    Returns:
-        Serializable metrics dictionary.
     """
     return {
         "portfolio_base_currency": metrics["portfolio_base_currency"],
@@ -222,18 +186,6 @@ def create_update_or_move_user_bond(request, target_holding_type):
 
     This function prevents the same active bond from appearing in both
     Portfolio and Watchlist for the same user.
-
-    Behavior:
-    1. If the bond already exists in the target section, update that item.
-    2. If the bond exists in the opposite section, move that item.
-    3. If the bond does not exist anywhere, create a new item.
-
-    Args:
-        request: DRF request object.
-        target_holding_type: Portfolio or Watchlist.
-
-    Returns:
-        Tuple of (UserBond instance, HTTP status code).
     """
     bond_id = request.data.get("bond")
 
@@ -339,9 +291,6 @@ class UserBondQuerysetMixin:
 class DashboardAPIView(UserBondQuerysetMixin, APIView):
     """
     API endpoint for the main dashboard.
-
-    The dashboard shows Portfolio bonds with risk and signal, plus a
-    portfolio-level summary.
     """
 
     permission_classes = [IsAuthenticated]
@@ -371,10 +320,6 @@ class DashboardAPIView(UserBondQuerysetMixin, APIView):
 class PortfolioAPIView(UserBondQuerysetMixin, APIView):
     """
     API endpoint for the Portfolio page.
-
-    GET returns portfolio items, row weights, and backend-calculated portfolio
-    analytics.
-    POST creates, updates, or moves a bond into Portfolio.
     """
 
     permission_classes = [IsAuthenticated]
@@ -430,7 +375,7 @@ class WatchlistAPIView(UserBondQuerysetMixin, APIView):
     """
     API endpoint for the Watchlist page.
 
-    GET returns watchlist items.
+    GET returns FX-aware Watchlist rows.
     POST creates, updates, or moves a bond into Watchlist.
     """
 
@@ -438,21 +383,28 @@ class WatchlistAPIView(UserBondQuerysetMixin, APIView):
 
     def get(self, request):
         """
-        Return Watchlist items for the current user.
+        Return Watchlist items with FX-aware market price data.
         """
-        watchlist_items = self.get_user_bond_queryset().filter(
-            holding_type=UserBond.HoldingType.WATCHLIST,
+        portfolio_base_currency = request.query_params.get(
+            "base_currency",
+            "EUR",
         )
 
-        serializer = UserBondReadSerializer(
-            watchlist_items,
+        watchlist_analytics = calculate_watchlist_analytics(
+            user=request.user,
+            portfolio_base_currency=portfolio_base_currency,
+        )
+
+        row_serializer = WatchlistRowSerializer(
+            watchlist_analytics["rows"],
             many=True,
         )
 
         return Response(
             {
                 "disclaimer": DISCLAIMER_TEXT,
-                "items": serializer.data,
+                "watchlist_metrics": watchlist_analytics["metrics"],
+                "items": row_serializer.data,
             }
         )
 
@@ -479,9 +431,6 @@ class UserBondDetailAPIView(
 ):
     """
     API endpoint for one Portfolio or Watchlist item.
-
-    This endpoint powers the Bond Detail page, which is not shown in the
-    sidebar navigation.
     """
 
     permission_classes = [IsAuthenticated]
@@ -547,9 +496,6 @@ class UserBondDetailAPIView(
     def destroy(self, request, *args, **kwargs):
         """
         Soft-delete the item by marking it inactive.
-
-        This keeps historical analysis data available in the database while
-        removing the item from the active Portfolio or Watchlist.
         """
         instance = self.get_object()
         instance.is_active = False

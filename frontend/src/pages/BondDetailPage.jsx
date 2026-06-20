@@ -1,27 +1,29 @@
 /**
  * Bond detail page.
  *
- * This page is not displayed in the sidebar. The user reaches it by clicking
- * a bond from Dashboard, Portfolio, or Watchlist.
+ * Displays one user-owned bond position from Portfolio or Watchlist.
  *
- * The page allows:
- * - viewing calculated analysis
- * - viewing cash flows
- * - editing position settings
- * - moving between Portfolio and Watchlist
- * - soft-deleting a position
- * - adding or updating manual market data
+ * This page shows:
+ * - bond master data
+ * - latest market data
+ * - latest bond analysis
+ * - risk and signal
+ * - discounted cash flows
+ * - market data update form
+ *
+ * Important:
+ *   If a position was moved from Watchlist to Portfolio, the old position ID
+ *   may become inactive. In that case, the backend may return 404.
  */
 
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { createMarketData } from "../api/bondsApi";
 import {
   deletePosition,
   fetchPositionDetail,
   movePosition,
-  updatePosition,
 } from "../api/portfolioApi";
 import Disclaimer from "../components/Disclaimer";
 import RiskBadge from "../components/RiskBadge";
@@ -30,411 +32,216 @@ import {
   formatDecimal,
   formatMoney,
   formatPercent,
-  formatRatioAsPercent,
 } from "../utils/formatters";
 
-const HOLDING_TYPES = {
-  PORTFOLIO: "PORTFOLIO",
-  WATCHLIST: "WATCHLIST",
-};
-
 function BondDetailPage() {
-  const { id } = useParams();
+  const { positionId } = useParams();
   const navigate = useNavigate();
 
   const [detailData, setDetailData] = useState(null);
+  const [marketDataForm, setMarketDataForm] = useState(getEmptyMarketDataForm());
+  const [isMarketFormVisible, setIsMarketFormVisible] = useState(false);
+  const [isSubmittingMarketData, setIsSubmittingMarketData] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
-  const [activePanel, setActivePanel] = useState(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const [positionForm, setPositionForm] = useState({
-    quantity: "0",
-    purchase_price: "",
-    base_currency: "EUR",
-    reinvest_coupons: false,
-    trading_fees_percent: "0.0000",
-    coupon_tax_percent: "0.0000",
-    expected_yield_change: "0.00000",
-    valuation_threshold_percent: "2.0000",
-    evaluation_basis: "MARKET_DATA",
-    target_required_return: "",
-    notes: "",
-    is_active: true,
-  });
-
-  const [moveForm, setMoveForm] = useState({
-    quantity: "1",
-    purchase_price: "",
-  });
-
-  const [marketDataForm, setMarketDataForm] = useState({
-    quote_date: new Date().toISOString().slice(0, 10),
-    market_price: "",
-    market_required_return: "",
-    ytm: "",
-    bid_price: "",
-    ask_price: "",
-    source: "manual",
-    is_manual: true,
-    notes: "",
-  });
 
   useEffect(() => {
-    loadDetail();
+    loadPositionDetail();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [positionId]);
 
-  async function loadDetail() {
-    setErrorMessage("");
-
+  async function loadPositionDetail() {
     try {
-      const data = await fetchPositionDetail(id);
+      setErrorMessage("");
+      setSuccessMessage("");
+
+      const data = await fetchPositionDetail(positionId);
       setDetailData(data);
-      hydrateForms(data.item);
+      setMarketDataForm(buildMarketDataForm(data.item));
     } catch (error) {
-      setErrorMessage("Δεν ήταν δυνατή η φόρτωση της ανάλυσης ομολόγου.");
+      setErrorMessage(
+        "Δεν ήταν δυνατή η φόρτωση της ανάλυσης ομολόγου. " +
+          "Το position μπορεί να έχει μετακινηθεί ή να έχει απενεργοποιηθεί. " +
+          "Άνοιξε το ομόλογο ξανά από το Portfolio ή το Watchlist."
+      );
     }
-  }
-
-  function hydrateForms(item) {
-    const latestMarketData = item.latest_market_data;
-
-    setPositionForm({
-      quantity: String(item.quantity ?? "0"),
-      purchase_price: item.purchase_price ?? "",
-      base_currency: item.base_currency ?? "EUR",
-      reinvest_coupons: Boolean(item.reinvest_coupons),
-      trading_fees_percent: item.trading_fees_percent ?? "0.0000",
-      coupon_tax_percent: item.coupon_tax_percent ?? "0.0000",
-      expected_yield_change: item.expected_yield_change ?? "0.00000",
-      valuation_threshold_percent: item.valuation_threshold_percent ?? "2.0000",
-      evaluation_basis: item.evaluation_basis ?? "MARKET_DATA",
-      target_required_return: item.target_required_return ?? "",
-      notes: item.notes ?? "",
-      is_active: Boolean(item.is_active),
-    });
-
-    setMoveForm({
-      quantity: item.quantity > 0 ? String(item.quantity) : "1",
-      purchase_price:
-        item.purchase_price || latestMarketData?.market_price || "",
-    });
-
-    setMarketDataForm({
-      quote_date:
-        latestMarketData?.quote_date || new Date().toISOString().slice(0, 10),
-      market_price: latestMarketData?.market_price || "",
-      market_required_return: latestMarketData?.market_required_return || "",
-      ytm: latestMarketData?.ytm || "",
-      bid_price: latestMarketData?.bid_price || "",
-      ask_price: latestMarketData?.ask_price || "",
-      source: latestMarketData?.source || "manual",
-      is_manual: latestMarketData?.is_manual ?? true,
-      notes: latestMarketData?.notes || "",
-    });
-  }
-
-  function cleanOptionalValue(value) {
-    if (value === "" || value === null || value === undefined) {
-      return null;
-    }
-
-    return value;
-  }
-
-  function handlePositionChange(event) {
-    const { name, type, checked, value } = event.target;
-
-    setPositionForm((previousData) => ({
-      ...previousData,
-      [name]: type === "checkbox" ? checked : value,
-    }));
-  }
-
-  function handleMoveChange(event) {
-    const { name, value } = event.target;
-
-    setMoveForm((previousData) => ({
-      ...previousData,
-      [name]: value,
-    }));
   }
 
   function handleMarketDataChange(event) {
-    const { name, type, checked, value } = event.target;
+    const { name, value } = event.target;
 
-    setMarketDataForm((previousData) => ({
-      ...previousData,
-      [name]: type === "checkbox" ? checked : value,
+    setMarketDataForm((previousForm) => ({
+      ...previousForm,
+      [name]: value,
     }));
-  }
-
-  function getTargetHoldingType(item) {
-    if (item.holding_type === HOLDING_TYPES.PORTFOLIO) {
-      return HOLDING_TYPES.WATCHLIST;
-    }
-
-    return HOLDING_TYPES.PORTFOLIO;
-  }
-
-  function getMoveButtonLabel(item) {
-    if (item.holding_type === HOLDING_TYPES.PORTFOLIO) {
-      return "Move to Watchlist";
-    }
-
-    return "Move to Portfolio";
-  }
-
-  function buildPositionPayload(item) {
-    const isPortfolio = item.holding_type === HOLDING_TYPES.PORTFOLIO;
-
-    return {
-      bond: item.bond.id,
-      quantity: isPortfolio ? Number(positionForm.quantity) : 0,
-      purchase_price: isPortfolio
-        ? cleanOptionalValue(positionForm.purchase_price)
-        : null,
-      base_currency: positionForm.base_currency,
-      reinvest_coupons: positionForm.reinvest_coupons,
-      trading_fees_percent: positionForm.trading_fees_percent,
-      coupon_tax_percent: positionForm.coupon_tax_percent,
-      expected_yield_change: positionForm.expected_yield_change,
-      valuation_threshold_percent: positionForm.valuation_threshold_percent,
-      evaluation_basis: positionForm.evaluation_basis,
-      target_required_return: cleanOptionalValue(
-        positionForm.target_required_return
-      ),
-      notes: positionForm.notes,
-      is_active: true,
-    };
-  }
-
-  function buildMarketDataPayload(item) {
-    return {
-      bond: item.bond.id,
-      quote_date: marketDataForm.quote_date,
-      market_price: marketDataForm.market_price,
-      market_required_return: cleanOptionalValue(
-        marketDataForm.market_required_return
-      ),
-      ytm: cleanOptionalValue(marketDataForm.ytm),
-      bid_price: cleanOptionalValue(marketDataForm.bid_price),
-      ask_price: cleanOptionalValue(marketDataForm.ask_price),
-      source: marketDataForm.source || "manual",
-      is_manual: marketDataForm.is_manual,
-      notes: marketDataForm.notes,
-    };
-  }
-
-  async function handlePositionSubmit(event) {
-    event.preventDefault();
-
-    if (!detailData?.item) {
-      return;
-    }
-
-    setIsSubmitting(true);
-    setErrorMessage("");
-    setSuccessMessage("");
-
-    try {
-      await updatePosition(id, buildPositionPayload(detailData.item));
-      await loadDetail();
-
-      setSuccessMessage("Η θέση ενημερώθηκε με επιτυχία.");
-      setActivePanel(null);
-    } catch (error) {
-      setErrorMessage(formatApiError(error, "Η ενημέρωση της θέσης απέτυχε."));
-    } finally {
-      setIsSubmitting(false);
-    }
   }
 
   async function handleMarketDataSubmit(event) {
     event.preventDefault();
 
-    if (!detailData?.item) {
+    if (!detailData?.item?.bond?.id) {
+      setErrorMessage("Δεν βρέθηκε bond id για αποθήκευση market data.");
       return;
     }
 
-    setIsSubmitting(true);
+    setIsSubmittingMarketData(true);
     setErrorMessage("");
     setSuccessMessage("");
 
     try {
-      await createMarketData(buildMarketDataPayload(detailData.item));
-      await loadDetail();
+      await createMarketData({
+        bond: detailData.item.bond.id,
+        quote_date: marketDataForm.quote_date,
+        market_price: marketDataForm.market_price,
+        market_required_return:
+          marketDataForm.market_required_return || null,
+        ytm: marketDataForm.ytm || null,
+        bid_price: marketDataForm.bid_price || null,
+        ask_price: marketDataForm.ask_price || null,
+        source: marketDataForm.source || "manual",
+        is_manual: true,
+        notes: marketDataForm.notes || "",
+      });
 
-      setSuccessMessage("Τα market data ενημερώθηκαν με επιτυχία.");
-      setActivePanel(null);
+      setSuccessMessage("Τα market data αποθηκεύτηκαν και η ανάλυση ενημερώθηκε.");
+      setIsMarketFormVisible(false);
+
+      await loadPositionDetail();
     } catch (error) {
       setErrorMessage(
-        formatApiError(error, "Η ενημέρωση των market data απέτυχε.")
+        "Δεν ήταν δυνατή η αποθήκευση των market data. Έλεγξε τα πεδία."
       );
     } finally {
-      setIsSubmitting(false);
+      setIsSubmittingMarketData(false);
     }
   }
 
-  async function handleMoveSubmit(event) {
-    event.preventDefault();
-
+  async function handleMovePosition() {
     if (!detailData?.item) {
       return;
     }
 
     const item = detailData.item;
-    const targetHoldingType = getTargetHoldingType(item);
+    const targetHoldingType =
+      item.holding_type === "PORTFOLIO" ? "WATCHLIST" : "PORTFOLIO";
 
-    setIsSubmitting(true);
-    setErrorMessage("");
-    setSuccessMessage("");
+    const payload = {
+      target_holding_type: targetHoldingType,
+    };
+
+    if (targetHoldingType === "PORTFOLIO") {
+      const quantity = window.prompt("Ποσότητα για μεταφορά στο Portfolio:", "1");
+
+      if (!quantity) {
+        return;
+      }
+
+      const purchasePrice = window.prompt(
+        "Τιμή αγοράς για το Portfolio:",
+        item.latest_market_data?.market_price || ""
+      );
+
+      payload.quantity = Number(quantity);
+      payload.purchase_price = purchasePrice || item.latest_market_data?.market_price;
+    }
 
     try {
-      const payload =
-        targetHoldingType === HOLDING_TYPES.PORTFOLIO
-          ? {
-              target_holding_type: targetHoldingType,
-              quantity: Number(moveForm.quantity),
-              purchase_price: cleanOptionalValue(moveForm.purchase_price),
-            }
-          : {
-              target_holding_type: targetHoldingType,
-            };
+      const movedItem = await movePosition(item.id, payload);
 
-      const movedItem = await movePosition(id, payload);
-
-      setSuccessMessage("Το ομόλογο μετακινήθηκε με επιτυχία.");
-      setActivePanel(null);
-
+      setSuccessMessage("Το ομόλογο μετακινήθηκε επιτυχώς.");
       navigate(`/positions/${movedItem.id}`);
     } catch (error) {
-      setErrorMessage(
-        formatApiError(error, "Η μετακίνηση του ομολόγου απέτυχε.")
-      );
-    } finally {
-      setIsSubmitting(false);
+      setErrorMessage("Δεν ήταν δυνατή η μετακίνηση του ομολόγου.");
     }
   }
 
-  async function handleDelete() {
+  async function handleDeletePosition() {
+    if (!detailData?.item) {
+      return;
+    }
+
     const confirmed = window.confirm(
-      "Θέλεις σίγουρα να διαγράψεις αυτή τη θέση;"
+      "Θέλεις σίγουρα να αφαιρέσεις αυτό το ομόλογο;"
     );
 
     if (!confirmed) {
       return;
     }
 
-    setIsSubmitting(true);
-    setErrorMessage("");
-    setSuccessMessage("");
-
     try {
-      const currentHoldingType = detailData.item.holding_type;
+      await deletePosition(detailData.item.id);
 
-      await deletePosition(id);
-
-      if (currentHoldingType === HOLDING_TYPES.PORTFOLIO) {
+      if (detailData.item.holding_type === "PORTFOLIO") {
         navigate("/portfolio");
       } else {
         navigate("/watchlist");
       }
     } catch (error) {
-      setErrorMessage(formatApiError(error, "Η διαγραφή της θέσης απέτυχε."));
-    } finally {
-      setIsSubmitting(false);
+      setErrorMessage("Δεν ήταν δυνατή η διαγραφή του ομολόγου.");
     }
-  }
-
-  function formatApiError(error, fallbackMessage) {
-    const apiError = error.response?.data;
-
-    if (typeof apiError === "string") {
-      return apiError;
-    }
-
-    if (apiError) {
-      return JSON.stringify(apiError);
-    }
-
-    return fallbackMessage;
   }
 
   if (errorMessage && !detailData) {
-    return <div className="error-box">{errorMessage}</div>;
+    return (
+      <section className="page-section">
+        <div className="error-box">{errorMessage}</div>
+
+        <div className="detail-actions">
+          <Link to="/portfolio" className="primary-link-button">
+            Go to Portfolio
+          </Link>
+
+          <Link to="/watchlist" className="secondary-link-button">
+            Go to Watchlist
+          </Link>
+        </div>
+      </section>
+    );
   }
 
   if (!detailData) {
-    return <div className="loading-text">Loading bond detail...</div>;
+    return <div className="loading-text">Loading bond analysis...</div>;
   }
 
   const item = detailData.item;
   const bond = item.bond;
-  const analysis = item.latest_analysis;
   const marketData = item.latest_market_data;
+  const analysis = item.latest_analysis;
   const cashFlows = analysis?.cash_flows || [];
-  const targetHoldingType = getTargetHoldingType(item);
 
   return (
     <section className="page-section">
-      <div className="detail-hero">
-        <span>{item.holding_type_label}</span>
-        <h1>{bond.name}</h1>
-        <p>
-          {bond.isin} | {bond.issuer} | {bond.currency}
-        </p>
-
-        <div className="signal-box">
-          <SignalBadge
-            signal={analysis?.final_signal}
-            label={analysis?.final_signal_label}
-          />
-
-          <RiskBadge
-            riskLevel={analysis?.risk_level}
-            label={analysis?.risk_level_label}
-          />
-
-          <span>Risk Score: {formatDecimal(analysis?.risk_score, 2)}</span>
+      <div className="page-header page-header-with-actions">
+        <div>
+          <h1>{bond.name}</h1>
+          <p>
+            {bond.isin} · {bond.issuer} · {bond.currency}
+          </p>
         </div>
-
-        <p>{analysis?.reasoning || "Δεν υπάρχει ακόμα διαθέσιμη ανάλυση."}</p>
 
         <div className="detail-actions">
           <button
             type="button"
-            onClick={() =>
-              setActivePanel(activePanel === "edit" ? null : "edit")
-            }
+            className="secondary-button"
+            onClick={() => setIsMarketFormVisible((value) => !value)}
           >
-            Edit Position
+            {isMarketFormVisible ? "Hide Market Data" : "Add / Update Market Data"}
           </button>
 
           <button
             type="button"
-            onClick={() =>
-              setActivePanel(activePanel === "marketData" ? null : "marketData")
-            }
+            className="secondary-button"
+            onClick={handleMovePosition}
           >
-            Add / Update Market Data
-          </button>
-
-          <button
-            type="button"
-            onClick={() =>
-              setActivePanel(activePanel === "move" ? null : "move")
-            }
-          >
-            {getMoveButtonLabel(item)}
+            {item.holding_type === "PORTFOLIO"
+              ? "Move to Watchlist"
+              : "Move to Portfolio"}
           </button>
 
           <button
             type="button"
             className="danger-button"
-            onClick={handleDelete}
-            disabled={isSubmitting}
+            onClick={handleDeletePosition}
           >
             Delete
           </button>
@@ -443,417 +250,144 @@ function BondDetailPage() {
 
       <Disclaimer text={detailData.disclaimer} />
 
-      {errorMessage && <div className="error-box">{errorMessage}</div>}
-      {successMessage && <div className="success-box">{successMessage}</div>}
+      {successMessage && <div className="info-box">{successMessage}</div>}
 
-      {activePanel === "edit" && (
-        <form className="form-card" onSubmit={handlePositionSubmit}>
-          <section className="form-section">
-            <h2>Edit Position</h2>
+      {errorMessage && <div className="warning-box">{errorMessage}</div>}
 
-            <div className="form-grid">
-              {item.holding_type === HOLDING_TYPES.PORTFOLIO && (
-                <>
-                  <label>
-                    Quantity
-                    <input
-                      name="quantity"
-                      type="number"
-                      min="1"
-                      value={positionForm.quantity}
-                      onChange={handlePositionChange}
-                      required
-                    />
-                  </label>
-
-                  <label>
-                    Purchase Price
-                    <input
-                      name="purchase_price"
-                      type="number"
-                      step="0.0001"
-                      value={positionForm.purchase_price}
-                      onChange={handlePositionChange}
-                      placeholder="Optional"
-                    />
-                  </label>
-                </>
-              )}
-
-              <label>
-                Base Currency
-                <input
-                  name="base_currency"
-                  type="text"
-                  maxLength="3"
-                  value={positionForm.base_currency}
-                  onChange={handlePositionChange}
-                  required
-                />
-              </label>
-
-              <label>
-                Trading Fees %
-                <input
-                  name="trading_fees_percent"
-                  type="number"
-                  step="0.0001"
-                  min="0"
-                  value={positionForm.trading_fees_percent}
-                  onChange={handlePositionChange}
-                />
-              </label>
-
-              <label>
-                Coupon Tax %
-                <input
-                  name="coupon_tax_percent"
-                  type="number"
-                  step="0.0001"
-                  min="0"
-                  value={positionForm.coupon_tax_percent}
-                  onChange={handlePositionChange}
-                />
-              </label>
-
-              <label>
-                Expected Yield Change Δy %
-                <input
-                  name="expected_yield_change"
-                  type="number"
-                  step="0.00001"
-                  value={positionForm.expected_yield_change}
-                  onChange={handlePositionChange}
-                />
-              </label>
-
-              <label>
-                Valuation Threshold %
-                <input
-                  name="valuation_threshold_percent"
-                  type="number"
-                  step="0.0001"
-                  min="0"
-                  value={positionForm.valuation_threshold_percent}
-                  onChange={handlePositionChange}
-                />
-              </label>
-
-              <label>
-                Personal Target Return %
-                <input
-                  name="target_required_return"
-                  type="number"
-                  step="0.00001"
-                  value={positionForm.target_required_return}
-                  onChange={handlePositionChange}
-                  placeholder="Optional"
-                />
-              </label>
-
-              <label className="checkbox-label">
-                <input
-                  name="reinvest_coupons"
-                  type="checkbox"
-                  checked={positionForm.reinvest_coupons}
-                  onChange={handlePositionChange}
-                />
-                Reinvest coupons
-              </label>
-
-              <label>
-                Position Notes
-                <textarea
-                  name="notes"
-                  value={positionForm.notes}
-                  onChange={handlePositionChange}
-                  rows="3"
-                />
-              </label>
-            </div>
-          </section>
-
-          <div className="form-actions">
-            <button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? "Saving..." : "Save Position"}
-            </button>
-
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => setActivePanel(null)}
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
+      {isMarketFormVisible && (
+        <MarketDataForm
+          formData={marketDataForm}
+          isSubmitting={isSubmittingMarketData}
+          onChange={handleMarketDataChange}
+          onSubmit={handleMarketDataSubmit}
+        />
       )}
 
-      {activePanel === "marketData" && (
-        <form className="form-card" onSubmit={handleMarketDataSubmit}>
-          <section className="form-section">
-            <h2>Add / Update Market Data</h2>
+      <div className="detail-grid">
+        <div className="detail-card">
+          <h2>Bond Info</h2>
 
-            <div className="form-grid">
-              <label>
-                Quote Date
-                <input
-                  name="quote_date"
-                  type="date"
-                  value={marketDataForm.quote_date}
-                  onChange={handleMarketDataChange}
-                  required
-                />
-              </label>
+          <InfoRow label="ISIN" value={bond.isin} />
+          <InfoRow label="Issuer" value={bond.issuer} />
+          <InfoRow label="Type" value={bond.bond_type_label} />
+          <InfoRow label="Currency" value={bond.currency} />
+          <InfoRow label="Seniority" value={bond.seniority_label} />
+          <InfoRow label="Credit Rating" value={bond.credit_rating || "-"} />
+          <InfoRow label="Liquidity" value={bond.market_liquidity_label} />
+          <InfoRow label="Maturity" value={bond.maturity_date} />
+          <InfoRow label="Coupon" value={formatPercent(bond.annual_coupon_rate, 3)} />
+          <InfoRow label="Frequency" value={bond.coupon_frequency} />
+        </div>
 
-              <label>
-                Market Price
-                <input
-                  name="market_price"
-                  type="number"
-                  step="0.0001"
-                  min="0"
-                  value={marketDataForm.market_price}
-                  onChange={handleMarketDataChange}
-                  required
-                />
-              </label>
+        <div className="detail-card">
+          <h2>Latest Market Data</h2>
 
-              <label>
-                Market Required Return %
-                <input
-                  name="market_required_return"
-                  type="number"
-                  step="0.00001"
-                  value={marketDataForm.market_required_return}
-                  onChange={handleMarketDataChange}
-                  placeholder="Optional"
-                />
-              </label>
-
-              <label>
-                YTM %
-                <input
-                  name="ytm"
-                  type="number"
-                  step="0.00001"
-                  value={marketDataForm.ytm}
-                  onChange={handleMarketDataChange}
-                  placeholder="Optional fallback"
-                />
-              </label>
-
-              <label>
-                Bid Price
-                <input
-                  name="bid_price"
-                  type="number"
-                  step="0.0001"
-                  value={marketDataForm.bid_price}
-                  onChange={handleMarketDataChange}
-                  placeholder="Optional"
-                />
-              </label>
-
-              <label>
-                Ask Price
-                <input
-                  name="ask_price"
-                  type="number"
-                  step="0.0001"
-                  value={marketDataForm.ask_price}
-                  onChange={handleMarketDataChange}
-                  placeholder="Optional"
-                />
-              </label>
-
-              <label>
-                Source
-                <input
-                  name="source"
-                  type="text"
-                  value={marketDataForm.source}
-                  onChange={handleMarketDataChange}
-                />
-              </label>
-
-              <label>
-                Market Data Notes
-                <textarea
-                  name="notes"
-                  value={marketDataForm.notes}
-                  onChange={handleMarketDataChange}
-                  rows="3"
-                />
-              </label>
-            </div>
-          </section>
-
-          <div className="form-actions">
-            <button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? "Saving..." : "Save Market Data"}
-            </button>
-
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => setActivePanel(null)}
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
-      )}
-
-      {activePanel === "move" && (
-        <form className="form-card" onSubmit={handleMoveSubmit}>
-          <section className="form-section">
-            <h2>{getMoveButtonLabel(item)}</h2>
-
-            {targetHoldingType === HOLDING_TYPES.PORTFOLIO ? (
-              <div className="form-grid">
-                <label>
-                  Quantity
-                  <input
-                    name="quantity"
-                    type="number"
-                    min="1"
-                    value={moveForm.quantity}
-                    onChange={handleMoveChange}
-                    required
-                  />
-                </label>
-
-                <label>
-                  Purchase Price
-                  <input
-                    name="purchase_price"
-                    type="number"
-                    step="0.0001"
-                    value={moveForm.purchase_price}
-                    onChange={handleMoveChange}
-                    placeholder="Optional"
-                  />
-                </label>
-              </div>
-            ) : (
-              <p className="muted-text">
-                Το ομόλογο θα μετακινηθεί στη Watchlist και η ποσότητα θα γίνει
-                μηδέν.
-              </p>
-            )}
-          </section>
-
-          <div className="form-actions">
-            <button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? "Moving..." : getMoveButtonLabel(item)}
-            </button>
-
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => setActivePanel(null)}
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
-      )}
-
-      <div className="metrics-grid">
-        <MetricCard
-          title="Market Price"
-          value={formatMoney(marketData?.market_price, bond.currency, 4)}
-          description="Τρέχουσα αγοραία τιμή σύμφωνα με τα τελευταία market data."
-        />
-
-        <MetricCard
-          title="Market Required Return"
-          value={formatPercent(marketData?.market_required_return, 2)}
-          description="Απαιτούμενη απόδοση αγοράς που χρησιμοποιείται ως βασικό discount rate."
-        />
-
-        <MetricCard
-          title="YTM"
-          value={formatPercent(marketData?.ytm, 2)}
-          description="Απόδοση έως τη λήξη, χρησιμοποιείται ως fallback αν δεν υπάρχει required return."
-        />
-
-        <MetricCard
-          title="Macaulay Duration"
-          value={formatDecimal(analysis?.macaulay_duration, 2)}
-          description="Σταθμισμένος χρόνος είσπραξης των ταμειακών ροών."
-        />
-
-        <MetricCard
-          title="Modified Duration"
-          value={formatDecimal(analysis?.modified_duration, 2)}
-          description="Ευαισθησία της τιμής σε μεταβολές επιτοκίων."
-        />
-
-        <MetricCard
-          title="Price Impact"
-          value={formatRatioAsPercent(analysis?.price_impact, 2)}
-          description="Εκτίμηση ποσοστιαίας μεταβολής τιμής με βάση το αναμενόμενο Δy."
-        />
-
-        <MetricCard
-          title="Estimated Price"
-          value={formatMoney(analysis?.estimated_price, bond.currency, 4)}
-          description="Εκτιμώμενη τιμή μετά την επίδραση της μεταβολής απόδοσης."
-        />
-
-        <MetricCard
-          title="Intrinsic Value"
-          value={formatMoney(analysis?.intrinsic_value, bond.currency, 4)}
-          description="Παρούσα αξία των μελλοντικών καθαρών ταμειακών ροών."
-        />
-
-        <MetricCard
-          title="IV vs Market Price"
-          value={formatPercent(analysis?.iv_vs_market_price, 2)}
-          description="Διαφορά εσωτερικής αξίας από την τρέχουσα αγοραία τιμή."
-        />
-
-        <MetricCard
-          title="Current Yield"
-          value={formatPercent(analysis?.current_yield, 2)}
-          description="Ετήσιο κουπόνι σε σχέση με την αγοραία τιμή."
-        />
-
-        <MetricCard
-          title="Approx AYTM"
-          value={formatPercent(analysis?.approx_aytm, 2)}
-          description="Προσεγγιστική ετήσια απόδοση έως τη λήξη."
-        />
-
-        <MetricCard
-          title="Net YTM"
-          value={formatPercent(analysis?.net_ytm, 2)}
-          description="Εκτίμηση απόδοσης μετά τη φορολογία κουπονιών."
-        />
-
-        <MetricCard
-          title="RCY"
-          value={formatPercent(analysis?.rcy, 2)}
-          description="Ένδειξη απόδοσης με βάση την επανεπένδυση κουπονιών."
-        />
+          {marketData ? (
+            <>
+              <InfoRow label="Quote Date" value={marketData.quote_date} />
+              <InfoRow
+                label="Market Price"
+                value={formatMoney(marketData.market_price, bond.currency, 4)}
+              />
+              <InfoRow label="YTM" value={formatPercent(marketData.ytm, 3)} />
+              <InfoRow
+                label="Required Return"
+                value={formatPercent(marketData.market_required_return, 3)}
+              />
+              <InfoRow
+                label="Bid / Ask"
+                value={`${formatDecimal(marketData.bid_price, 4)} / ${formatDecimal(
+                  marketData.ask_price,
+                  4
+                )}`}
+              />
+              <InfoRow label="Source" value={marketData.source} />
+            </>
+          ) : (
+            <p className="muted-text">
+              Δεν υπάρχουν market data. Πρόσθεσε market price και required return.
+            </p>
+          )}
+        </div>
       </div>
 
       <div className="table-card">
-        <h2>Cash Flows</h2>
+        <h2>Analysis Summary</h2>
+
+        {analysis ? (
+          <>
+            <div className="metric-grid">
+              <MetricCard
+                label="Intrinsic Value"
+                value={formatMoney(analysis.intrinsic_value, bond.currency, 2)}
+              />
+
+              <MetricCard
+                label="Current Yield"
+                value={formatPercent(analysis.current_yield, 2)}
+              />
+
+              <MetricCard label="Net YTM" value={formatPercent(analysis.net_ytm, 2)} />
+
+              <MetricCard
+                label="Modified Duration"
+                value={formatDecimal(analysis.modified_duration, 2)}
+              />
+
+              <MetricCard
+                label="Risk Score"
+                value={formatDecimal(analysis.risk_score, 2)}
+              />
+
+              <div className="metric-card">
+                <span>Risk Level</span>
+                <RiskBadge
+                  riskLevel={analysis.risk_level}
+                  label={analysis.risk_level_label}
+                />
+              </div>
+
+              <div className="metric-card">
+                <span>Signal</span>
+                <SignalBadge
+                  signal={analysis.final_signal}
+                  label={analysis.final_signal_label}
+                />
+              </div>
+            </div>
+
+            <div className="analysis-text-grid">
+              <div>
+                <h3>Reasoning</h3>
+                <p>{analysis.reasoning || "-"}</p>
+              </div>
+
+              <div>
+                <h3>Risk Reasoning</h3>
+                <p>{analysis.risk_reasoning || "-"}</p>
+              </div>
+            </div>
+          </>
+        ) : (
+          <p className="muted-text">
+            Δεν υπάρχει ακόμα ανάλυση. Συνήθως χρειάζονται market data και θέση
+            στο Portfolio ή Watchlist.
+          </p>
+        )}
+      </div>
+
+      <div className="table-card">
+        <h2>Discounted Cash Flows</h2>
 
         <div className="table-scroll">
           <table>
             <thead>
               <tr>
-                <th>Period</th>
                 <th>Payment Date</th>
-                <th>Coupon Gross</th>
-                <th>Coupon Tax</th>
-                <th>Coupon Net</th>
+                <th>Coupon</th>
                 <th>Principal</th>
                 <th>Total Cash Flow</th>
+                <th>Discount Factor</th>
                 <th>Discounted Cash Flow</th>
               </tr>
             </thead>
@@ -861,27 +395,21 @@ function BondDetailPage() {
             <tbody>
               {cashFlows.length === 0 ? (
                 <tr>
-                  <td colSpan="8">Δεν υπάρχουν διαθέσιμα cash flows.</td>
+                  <td colSpan="6">Δεν υπάρχουν διαθέσιμες ταμειακές ροές.</td>
                 </tr>
               ) : (
                 cashFlows.map((cashFlow) => (
                   <tr key={cashFlow.id}>
-                    <td>{cashFlow.period_number}</td>
                     <td>{cashFlow.payment_date}</td>
-                    <td>
-                      {formatMoney(cashFlow.coupon_gross, bond.currency, 4)}
-                    </td>
-                    <td>{formatMoney(cashFlow.coupon_tax, bond.currency, 4)}</td>
-                    <td>{formatMoney(cashFlow.coupon_net, bond.currency, 4)}</td>
-                    <td>{formatMoney(cashFlow.principal, bond.currency, 4)}</td>
-                    <td>
-                      {formatMoney(cashFlow.total_cash_flow, bond.currency, 4)}
-                    </td>
+                    <td>{formatMoney(cashFlow.coupon_amount, bond.currency, 2)}</td>
+                    <td>{formatMoney(cashFlow.principal_amount, bond.currency, 2)}</td>
+                    <td>{formatMoney(cashFlow.total_cash_flow, bond.currency, 2)}</td>
+                    <td>{formatDecimal(cashFlow.discount_factor, 6)}</td>
                     <td>
                       {formatMoney(
                         cashFlow.discounted_cash_flow,
                         bond.currency,
-                        4
+                        2
                       )}
                     </td>
                   </tr>
@@ -895,14 +423,155 @@ function BondDetailPage() {
   );
 }
 
-function MetricCard({ title, value, description }) {
+function MarketDataForm({ formData, isSubmitting, onChange, onSubmit }) {
   return (
-    <div className="metric-card">
-      <span>{title}</span>
+    <form className="form-card" onSubmit={onSubmit}>
+      <h2>Market Data</h2>
+
+      <div className="form-grid">
+        <label>
+          Quote Date
+          <input
+            type="date"
+            name="quote_date"
+            value={formData.quote_date}
+            onChange={onChange}
+            required
+          />
+        </label>
+
+        <label>
+          Market Price
+          <input
+            type="number"
+            step="0.0001"
+            name="market_price"
+            value={formData.market_price}
+            onChange={onChange}
+            required
+          />
+        </label>
+
+        <label>
+          Market Required Return %
+          <input
+            type="number"
+            step="0.00001"
+            name="market_required_return"
+            value={formData.market_required_return}
+            onChange={onChange}
+          />
+        </label>
+
+        <label>
+          YTM %
+          <input
+            type="number"
+            step="0.00001"
+            name="ytm"
+            value={formData.ytm}
+            onChange={onChange}
+          />
+        </label>
+
+        <label>
+          Bid Price
+          <input
+            type="number"
+            step="0.0001"
+            name="bid_price"
+            value={formData.bid_price}
+            onChange={onChange}
+          />
+        </label>
+
+        <label>
+          Ask Price
+          <input
+            type="number"
+            step="0.0001"
+            name="ask_price"
+            value={formData.ask_price}
+            onChange={onChange}
+          />
+        </label>
+
+        <label>
+          Source
+          <input
+            type="text"
+            name="source"
+            value={formData.source}
+            onChange={onChange}
+          />
+        </label>
+      </div>
+
+      <label>
+        Notes
+        <textarea
+          name="notes"
+          value={formData.notes}
+          onChange={onChange}
+          rows="3"
+        />
+      </label>
+
+      <button type="submit" className="primary-link-button" disabled={isSubmitting}>
+        {isSubmitting ? "Saving..." : "Save Market Data"}
+      </button>
+    </form>
+  );
+}
+
+function InfoRow({ label, value }) {
+  return (
+    <div className="info-row">
+      <span>{label}</span>
       <strong>{value || "-"}</strong>
-      <p>{description}</p>
     </div>
   );
+}
+
+function MetricCard({ label, value }) {
+  return (
+    <div className="metric-card">
+      <span>{label}</span>
+      <strong>{value || "-"}</strong>
+    </div>
+  );
+}
+
+function getEmptyMarketDataForm() {
+  return {
+    quote_date: new Date().toISOString().slice(0, 10),
+    market_price: "",
+    market_required_return: "",
+    ytm: "",
+    bid_price: "",
+    ask_price: "",
+    source: "manual",
+    notes: "",
+  };
+}
+
+function buildMarketDataForm(item) {
+  const marketData = item?.latest_market_data;
+
+  if (!marketData) {
+    return getEmptyMarketDataForm();
+  }
+
+  return {
+    quote_date: marketData.quote_date || new Date().toISOString().slice(0, 10),
+    market_price: marketData.market_price || "",
+    market_required_return: marketData.market_required_return || "",
+    ytm: marketData.ytm || "",
+    bid_price: marketData.bid_price || "",
+    ask_price: marketData.ask_price || "",
+    source: marketData.source || "manual",
+    notes: marketData.notes || "",
+  };
 }
 
 export default BondDetailPage;

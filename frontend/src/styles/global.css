@@ -3,9 +3,27 @@
  *
  * The UI is intentionally simple and responsive:
  * - desktop: vertical sidebar on the left
- * - mobile: sidebar becomes full-width top section
+ * - mobile: sidebar becomes a top section
  * - tables: horizontal scroll on small screens
+ *
+ * This file is organized by feature area:
+ * 1. Root variables and resets
+ * 2. Application shell and sidebar
+ * 3. Generic page layout
+ * 4. Cards, tables, messages
+ * 5. Buttons and forms
+ * 6. Login page
+ * 7. Badges
+ * 8. Dashboard
+ * 9. Portfolio / Watchlist shared styles
+ * 10. FX Rates page
+ * 11. Bond detail page
+ * 12. Responsive rules
  */
+
+/* ------------------------------------------------------------------
+ * 1. Root variables and resets
+ * ------------------------------------------------------------------ */
 
 :root {
   --color-bg: #f5f7fb;
@@ -18,8 +36,16 @@
   --color-muted: #667085;
   --color-border: #e4e7ec;
   --color-danger: #b42318;
+  --color-danger-bg: #fef3f2;
+  --color-success: #067647;
+  --color-success-bg: #ecfdf3;
+  --color-warning: #b54708;
   --color-warning-bg: #fffaeb;
   --color-warning-border: #fedf89;
+  --color-info: #1d4ed8;
+  --color-info-bg: #eff6ff;
+  --color-info-border: #bfdbfe;
+
   --shadow-card: 0 10px 30px rgba(16, 24, 40, 0.08);
   --radius-card: 16px;
   --sidebar-width: 280px;
@@ -44,9 +70,15 @@ a {
 }
 
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
 }
+
+/* ------------------------------------------------------------------
+ * 2. Application shell and sidebar
+ * ------------------------------------------------------------------ */
 
 .app-shell {
   display: flex;
@@ -62,29 +94,47 @@ input {
   justify-content: space-between;
   padding: 24px;
   background: var(--color-sidebar);
-  color: white;
+  color: #ffffff;
+}
+
+.sidebar-main {
+  display: flex;
+  flex-direction: column;
+  gap: 34px;
 }
 
 .sidebar-brand {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 36px;
+  gap: 10px;
 }
 
-.brand-mark {
+.sidebar-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #111827;
+  font-weight: 900;
+}
+
+.sidebar-brand-text {
   display: grid;
-  width: 40px;
-  height: 40px;
-  place-items: center;
-  border-radius: 12px;
-  background: var(--color-primary);
-  font-weight: 800;
+  gap: 2px;
 }
 
-.brand-text {
-  font-weight: 700;
-  letter-spacing: 0.2px;
+.sidebar-brand-text strong {
+  color: #ffffff;
+  font-size: 15px;
+  line-height: 1.1;
+}
+
+.sidebar-brand-text small {
+  color: #cbd5e1;
+  font-size: 12px;
 }
 
 .sidebar-nav {
@@ -92,22 +142,32 @@ input {
   gap: 8px;
 }
 
-.sidebar-link {
+.sidebar-nav a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   padding: 12px 14px;
   border-radius: 12px;
   color: #d0d5dd;
+  font-weight: 800;
   transition: background 0.2s ease, color 0.2s ease;
 }
 
-.sidebar-link:hover,
-.sidebar-link.active {
+.sidebar-nav a:hover,
+.sidebar-nav a.active {
   background: rgba(255, 255, 255, 0.1);
   color: #ffffff;
 }
 
-.sidebar-bottom {
+.nav-icon {
+  width: 24px;
+  display: inline-flex;
+  justify-content: center;
+}
+
+.sidebar-footer {
   display: grid;
-  gap: 14px;
+  gap: 12px;
 }
 
 .sidebar-user {
@@ -118,46 +178,65 @@ input {
   border-radius: 14px;
 }
 
-.sidebar-user-label {
+.sidebar-user span {
   color: var(--color-sidebar-muted);
-  font-size: 0.8rem;
+  font-size: 0.85rem;
 }
 
-.logout-button,
-.contact-button {
+.sidebar-user strong {
+  color: #ffffff;
+}
+
+.logout-button {
   display: inline-flex;
   justify-content: center;
   width: 100%;
   padding: 11px 14px;
   border: 0;
   border-radius: 12px;
-  cursor: pointer;
-  font-weight: 700;
-}
-
-.logout-button {
   background: #ffffff;
   color: var(--color-sidebar);
+  cursor: pointer;
+  font-weight: 800;
 }
 
-.contact-button {
-  background: rgba(255, 255, 255, 0.1);
+.contact-block {
+  display: grid;
+  gap: 8px;
+}
+
+.contact-block strong {
   color: #ffffff;
 }
 
-.social-links {
+.contact-icons {
   display: flex;
   gap: 10px;
+  align-items: center;
 }
 
-.social-links a {
-  display: grid;
-  width: 40px;
-  height: 40px;
-  place-items: center;
-  border-radius: 12px;
+.contact-icons a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(203, 213, 225, 0.35);
+  border-radius: 10px;
+  color: #ffffff;
+  text-decoration: none;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.contact-icons a:hover {
   background: rgba(255, 255, 255, 0.1);
-  font-weight: 700;
+  transform: translateY(-1px);
+}
+
+.contact-icons svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
 }
 
 .main-content {
@@ -165,6 +244,10 @@ input {
   margin-left: var(--sidebar-width);
   padding: 32px;
 }
+
+/* ------------------------------------------------------------------
+ * 3. Generic page layout
+ * ------------------------------------------------------------------ */
 
 .page-section {
   display: grid;
@@ -179,15 +262,37 @@ input {
 .page-header p {
   margin: 0;
   color: var(--color-muted);
+  line-height: 1.6;
 }
 
-.disclaimer-box {
-  padding: 14px 16px;
-  border: 1px solid var(--color-warning-border);
-  border-radius: var(--radius-card);
-  background: var(--color-warning-bg);
-  color: #93370d;
+.page-header-with-actions {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
 }
+
+.portfolio-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  justify-content: flex-end;
+}
+
+.loading-text,
+.muted-text {
+  color: var(--color-muted);
+  line-height: 1.6;
+}
+
+.muted-text {
+  margin: 0;
+}
+
+/* ------------------------------------------------------------------
+ * 4. Cards, tables, and messages
+ * ------------------------------------------------------------------ */
 
 .summary-grid,
 .metrics-grid {
@@ -199,7 +304,12 @@ input {
 .summary-card,
 .metric-card,
 .table-card,
-.detail-hero,
+.detail-card,
+.form-card,
+.toolbar-card,
+.insight-card,
+.portfolio-insight-card,
+.financial-metric-card,
 .login-card {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
@@ -218,18 +328,12 @@ input {
 .metric-card span {
   color: var(--color-muted);
   font-size: 0.9rem;
+  font-weight: 800;
 }
 
 .summary-card strong,
 .metric-card strong {
-  font-size: 1.4rem;
-}
-
-.metric-card p {
-  margin: 0;
-  color: var(--color-muted);
-  font-size: 0.9rem;
-  line-height: 1.5;
+  font-size: 1.25rem;
 }
 
 .table-card {
@@ -262,25 +366,200 @@ td {
 th {
   color: var(--color-muted);
   font-size: 0.85rem;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 td a {
   color: var(--color-primary);
-  font-weight: 700;
+  font-weight: 800;
 }
 
-.loading-text {
-  color: var(--color-muted);
+.disclaimer-box,
+.warning-box,
+.info-box,
+.error-box,
+.success-box {
+  padding: 14px 16px;
+  border-radius: var(--radius-card);
+  font-weight: 800;
+  line-height: 1.5;
+}
+
+.disclaimer-box,
+.warning-box {
+  border: 1px solid var(--color-warning-border);
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.info-box {
+  border: 1px solid var(--color-info-border);
+  background: var(--color-info-bg);
+  color: var(--color-info);
 }
 
 .error-box {
-  padding: 14px 16px;
   border: 1px solid #fecdca;
-  border-radius: var(--radius-card);
-  background: #fef3f2;
+  background: var(--color-danger-bg);
   color: var(--color-danger);
 }
+
+.success-box {
+  border: 1px solid #abefc6;
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+/* ------------------------------------------------------------------
+ * 5. Buttons and forms
+ * ------------------------------------------------------------------ */
+
+.primary-link-button,
+.secondary-link-button,
+.secondary-button,
+.danger-button,
+.form-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.primary-link-button,
+.form-actions button {
+  border: 0;
+  background: var(--color-primary);
+  color: #ffffff;
+}
+
+.primary-link-button:hover,
+.form-actions button:hover {
+  background: var(--color-primary-dark);
+}
+
+.secondary-button,
+.secondary-link-button {
+  border: 1px solid var(--color-border);
+  background: #ffffff;
+  color: var(--color-text);
+}
+
+.secondary-button:hover,
+.secondary-link-button:hover {
+  background: #f8fafc;
+}
+
+.secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.danger-button {
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.danger-button:hover {
+  background: #fee2e2;
+}
+
+.form-card {
+  display: grid;
+  gap: 24px;
+  padding: 24px;
+}
+
+.form-section {
+  display: grid;
+  gap: 16px;
+}
+
+.form-section h2,
+.form-card h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.form-grid label,
+.form-card label,
+.compact-select-label {
+  display: grid;
+  gap: 8px;
+  color: var(--color-muted);
+  font-weight: 800;
+}
+
+.form-grid input,
+.form-grid select,
+.form-grid textarea,
+.form-card input,
+.form-card select,
+.form-card textarea,
+.compact-select-label select {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: #ffffff;
+  color: var(--color-text);
+  outline: none;
+}
+
+.form-grid textarea,
+.form-card textarea {
+  resize: vertical;
+}
+
+.form-grid input:focus,
+.form-grid select:focus,
+.form-grid textarea:focus,
+.form-card input:focus,
+.form-card select:focus,
+.form-card textarea:focus,
+.compact-select-label select:focus {
+  border-color: var(--color-primary);
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: #ffffff;
+  color: var(--color-text);
+  font-weight: 800;
+}
+
+.checkbox-label input {
+  width: 16px;
+  height: 16px;
+}
+
+/* ------------------------------------------------------------------
+ * 6. Login page
+ * ------------------------------------------------------------------ */
 
 .login-page {
   display: grid;
@@ -296,19 +575,19 @@ td a {
   padding: 28px;
 }
 
-.login-card h1 {
+.login-card h1,
+.login-card p {
   margin: 0;
 }
 
 .login-card p {
-  margin: 0;
   color: var(--color-muted);
 }
 
 .login-card label {
   display: grid;
   gap: 8px;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .login-card input {
@@ -328,9 +607,9 @@ td a {
   border: 0;
   border-radius: 12px;
   background: var(--color-primary);
-  color: white;
+  color: #ffffff;
   cursor: pointer;
-  font-weight: 800;
+  font-weight: 900;
 }
 
 .login-card button:hover {
@@ -342,274 +621,8 @@ td a {
   opacity: 0.7;
 }
 
-.detail-hero {
-  display: grid;
-  gap: 12px;
-  padding: 24px;
-}
-
-.detail-hero h1,
-.detail-hero p {
-  margin: 0;
-}
-
-.detail-hero > span {
-  width: fit-content;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: #eff6ff;
-  color: var(--color-primary-dark);
-  font-weight: 700;
-  font-size: 0.85rem;
-}
-
-.signal-box {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  padding: 14px;
-  border-radius: 14px;
-  background: #f8fafc;
-}
-
-.signal-box strong {
-  color: var(--color-primary-dark);
-  font-size: 1.4rem;
-}
-
-/* Mobile layout */
-@media (max-width: 900px) {
-  .app-shell {
-    display: block;
-  }
-
-  .sidebar {
-    position: static;
-    width: 100%;
-    gap: 20px;
-  }
-
-  .sidebar-brand {
-    margin-bottom: 16px;
-  }
-
-  .sidebar-nav {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .sidebar-link {
-    text-align: center;
-  }
-
-  .main-content {
-    width: 100%;
-    margin-left: 0;
-    padding: 20px;
-  }
-
-  .summary-grid,
-  .metrics-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 560px) {
-  .sidebar-nav,
-  .summary-grid,
-  .metrics-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .main-content {
-    padding: 16px;
-  }
-
-  .table-card,
-  .detail-hero,
-  .login-card {
-    padding: 18px;
-  }
-}
-
 /* ------------------------------------------------------------------
- * Form and action styles
- * ------------------------------------------------------------------ */
-
-.page-header-with-actions {
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
-  justify-content: space-between;
-}
-
-.primary-link-button,
-.form-actions button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 44px;
-  padding: 11px 16px;
-  border: 0;
-  border-radius: 12px;
-  background: var(--color-primary);
-  color: #ffffff;
-  cursor: pointer;
-  font-weight: 800;
-  text-decoration: none;
-}
-
-.primary-link-button:hover,
-.form-actions button:hover {
-  background: var(--color-primary-dark);
-}
-
-.secondary-button {
-  background: #ffffff !important;
-  color: var(--color-text) !important;
-  border: 1px solid var(--color-border) !important;
-}
-
-.form-card {
-  display: grid;
-  gap: 24px;
-  padding: 24px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-card);
-}
-
-.form-section {
-  display: grid;
-  gap: 16px;
-}
-
-.form-section h2 {
-  margin: 0;
-  font-size: 1.1rem;
-}
-
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.form-grid label {
-  display: grid;
-  gap: 8px;
-  color: var(--color-text);
-  font-weight: 700;
-}
-
-.form-grid input,
-.form-grid select,
-.form-grid textarea {
-  width: 100%;
-  padding: 11px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  background: #ffffff;
-  color: var(--color-text);
-  outline: none;
-}
-
-.form-grid textarea {
-  resize: vertical;
-}
-
-.form-grid input:focus,
-.form-grid select:focus,
-.form-grid textarea:focus {
-  border-color: var(--color-primary);
-}
-
-.checkbox-label {
-  display: flex !important;
-  flex-direction: row !important;
-  gap: 10px !important;
-  align-items: center;
-  padding-top: 28px;
-}
-
-.checkbox-label input {
-  width: auto;
-}
-
-.form-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.success-box {
-  padding: 14px 16px;
-  border: 1px solid #abefc6;
-  border-radius: var(--radius-card);
-  background: #ecfdf3;
-  color: #067647;
-}
-
-@media (max-width: 760px) {
-  .page-header-with-actions {
-    display: grid;
-  }
-
-  .form-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* ------------------------------------------------------------------
- * Bond detail action styles
- * ------------------------------------------------------------------ */
-
-.detail-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.detail-actions button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 42px;
-  padding: 10px 14px;
-  border: 0;
-  border-radius: 12px;
-  background: var(--color-primary);
-  color: #ffffff;
-  cursor: pointer;
-  font-weight: 800;
-}
-
-.detail-actions button:hover {
-  background: var(--color-primary-dark);
-}
-
-.detail-actions button:disabled {
-  cursor: not-allowed;
-  opacity: 0.65;
-}
-
-.danger-button {
-  background: #d92d20 !important;
-}
-
-.danger-button:hover {
-  background: #b42318 !important;
-}
-
-.muted-text {
-  margin: 0;
-  color: var(--color-muted);
-  line-height: 1.6;
-}
-
-/* ------------------------------------------------------------------
- * Badge styles
+ * 7. Badge styles
  * ------------------------------------------------------------------ */
 
 .badge {
@@ -621,17 +634,19 @@ td a {
   padding: 5px 10px;
   border-radius: 999px;
   font-size: 0.82rem;
-  font-weight: 800;
+  font-weight: 900;
   white-space: nowrap;
 }
 
-/* Risk badges */
-.risk-badge {
+.risk-badge,
+.signal-badge {
   background: #f2f4f7;
   color: #344054;
 }
 
-.risk-VERY_LOW {
+.risk-VERY_LOW,
+.signal-BUY,
+.signal-BUY_MORE {
   background: #ecfdf3;
   color: #067647;
 }
@@ -641,53 +656,29 @@ td a {
   color: #15803d;
 }
 
-.risk-MEDIUM {
-  background: #fffaeb;
-  color: #b54708;
-}
-
-.risk-HIGH {
-  background: #fff1f3;
-  color: #c01048;
-}
-
-.risk-VERY_HIGH {
-  background: #fef3f2;
-  color: #b42318;
-}
-
-/* Signal badges */
-.signal-badge {
-  background: #f2f4f7;
-  color: #344054;
-}
-
-.signal-BUY,
-.signal-BUY_MORE {
-  background: #ecfdf3;
-  color: #067647;
-}
-
+.risk-MEDIUM,
 .signal-BUY_WITH_CAUTION,
 .signal-BUY_LOW_YIELD {
   background: #fffaeb;
   color: #b54708;
 }
 
-.signal-HOLD {
-  background: #eff8ff;
-  color: #175cd3;
+.risk-HIGH,
+.signal-PARTIAL_SELL {
+  background: #fff1f3;
+  color: #c01048;
 }
 
+.risk-VERY_HIGH,
 .signal-DO_NOT_BUY_WAIT,
 .signal-SELL {
   background: #fef3f2;
   color: #b42318;
 }
 
-.signal-PARTIAL_SELL {
-  background: #fff1f3;
-  color: #c01048;
+.signal-HOLD {
+  background: #eff8ff;
+  color: #175cd3;
 }
 
 .signal-REVIEW {
@@ -696,18 +687,7 @@ td a {
 }
 
 /* ------------------------------------------------------------------
- * Detail hero badge alignment
- * ------------------------------------------------------------------ */
-
-.signal-box {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-}
-
-/* ------------------------------------------------------------------
- * Dashboard insight cards
+ * 8. Dashboard
  * ------------------------------------------------------------------ */
 
 .dashboard-insights-grid {
@@ -720,10 +700,6 @@ td a {
   display: grid;
   gap: 14px;
   padding: 20px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-card);
 }
 
 .insight-card h2 {
@@ -731,52 +707,59 @@ td a {
   font-size: 1.05rem;
 }
 
-.distribution-list {
+.distribution-list,
+.exposure-list {
   display: grid;
   gap: 10px;
 }
 
-.distribution-row {
+.distribution-row,
+.exposure-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
+  gap: 16px;
+  padding: 12px;
   border-radius: 12px;
   background: #f8fafc;
 }
 
-.distribution-row span {
+.distribution-row span,
+.exposure-row span {
   color: var(--color-muted);
-  font-weight: 700;
+  font-weight: 800;
 }
 
-.distribution-row strong {
+.distribution-row strong,
+.exposure-row strong {
   color: var(--color-text);
-  font-size: 1.05rem;
 }
 
-.bond-insight {
+.bond-insight,
+.position-insight {
   display: grid;
   gap: 8px;
 }
 
-.bond-insight a {
+.bond-insight a,
+.position-insight a {
   color: var(--color-primary);
   font-weight: 900;
-  text-decoration: none;
 }
 
-.bond-insight a:hover {
+.bond-insight a:hover,
+.position-insight a:hover {
   text-decoration: underline;
 }
 
-.bond-insight > span {
+.bond-insight > span,
+.position-insight > span {
   color: var(--color-muted);
-  font-weight: 700;
+  font-weight: 800;
 }
 
-.bond-insight-metric {
+.bond-insight-metric,
+.position-insight-metric {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -786,23 +769,14 @@ td a {
   background: #f8fafc;
 }
 
-.bond-insight-metric span {
+.bond-insight-metric span,
+.position-insight-metric span {
   color: var(--color-muted);
-  font-weight: 700;
-}
-
-.bond-insight-metric strong {
-  color: var(--color-text);
-}
-
-@media (max-width: 900px) {
-  .dashboard-insights-grid {
-    grid-template-columns: 1fr;
-  }
+  font-weight: 800;
 }
 
 /* ------------------------------------------------------------------
- * Portfolio financial overview
+ * 9. Portfolio / Watchlist shared styles
  * ------------------------------------------------------------------ */
 
 .portfolio-financial-grid {
@@ -815,10 +789,6 @@ td a {
   display: grid;
   gap: 8px;
   padding: 20px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-card);
 }
 
 .financial-metric-card span {
@@ -847,10 +817,6 @@ td a {
   display: grid;
   gap: 14px;
   padding: 20px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-card);
 }
 
 .portfolio-insight-card h2 {
@@ -858,161 +824,203 @@ td a {
   font-size: 1.05rem;
 }
 
-.position-insight {
-  display: grid;
-  gap: 8px;
-}
-
-.position-insight a {
-  color: var(--color-primary);
-  font-weight: 900;
-  text-decoration: none;
-}
-
-.position-insight a:hover {
-  text-decoration: underline;
-}
-
-.position-insight > span {
-  color: var(--color-muted);
-  font-weight: 700;
-}
-
-.position-insight-metric {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 12px;
-  border-radius: 12px;
-  background: #f8fafc;
-}
-
-.position-insight-metric span {
-  color: var(--color-muted);
-  font-weight: 700;
-}
-
-.position-insight-metric strong {
-  color: var(--color-text);
-}
-
-.exposure-list {
-  display: grid;
-  gap: 10px;
-}
-
-.exposure-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 12px;
-  border-radius: 12px;
-  background: #f8fafc;
-}
-
 .exposure-row div {
   display: grid;
   gap: 4px;
 }
 
-.exposure-row strong {
-  color: var(--color-text);
+/* ------------------------------------------------------------------
+ * 10. FX Rates page
+ * ------------------------------------------------------------------ */
+
+.toolbar-card {
+  padding: 18px;
 }
 
-.exposure-row span {
-  color: var(--color-muted);
-  font-weight: 700;
+.fx-controls-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) 1fr auto;
+  gap: 16px;
+  align-items: end;
 }
+
+.fx-checkbox-group {
+  display: grid;
+  gap: 8px;
+}
+
+.fx-checkbox-group > span {
+  color: var(--color-muted);
+  font-weight: 800;
+}
+
+.checkbox-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #4338ca;
+  font-weight: 900;
+}
+
+/* ------------------------------------------------------------------
+ * 11. Bond detail page
+ * ------------------------------------------------------------------ */
+
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.detail-card {
+  padding: 18px;
+}
+
+.detail-card h2,
+.table-card h2 {
+  margin-bottom: 14px;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.info-row:last-child {
+  border-bottom: 0;
+}
+
+.info-row span {
+  color: var(--color-muted);
+  font-weight: 800;
+}
+
+.info-row strong {
+  text-align: right;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  gap: 14px;
+}
+
+.analysis-text-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.analysis-text-grid h3 {
+  margin-bottom: 8px;
+}
+
+.analysis-text-grid p {
+  color: var(--color-muted);
+  line-height: 1.6;
+}
+
+/* ------------------------------------------------------------------
+ * 12. Responsive rules
+ * ------------------------------------------------------------------ */
 
 @media (max-width: 1200px) {
   .portfolio-financial-grid,
   .portfolio-insights-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(160px, 1fr));
+  }
 }
 
-@media (max-width: 760px) {
-  .portfolio-financial-grid,
-  .portfolio-insights-grid {
+@media (max-width: 1000px) {
+  .detail-grid,
+  .analysis-text-grid {
     grid-template-columns: 1fr;
   }
 }
 
-/* ------------------------------------------------------------------
- * Warning box
- * ------------------------------------------------------------------ */
+@media (max-width: 900px) {
+  .app-shell {
+    display: block;
+  }
 
-.warning-box {
-  padding: 14px 16px;
-  border: 1px solid #fedf89;
-  border-radius: var(--radius-card);
-  background: #fffaeb;
-  color: #b54708;
-  font-weight: 700;
-  line-height: 1.5;
+  .sidebar {
+    position: static;
+    width: 100%;
+    gap: 20px;
+  }
+
+  .sidebar-nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .main-content {
+    width: 100%;
+    margin-left: 0;
+    padding: 20px;
+  }
+
+  .summary-grid,
+  .metrics-grid,
+  .dashboard-insights-grid,
+  .fx-controls-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .portfolio-header-actions {
+    justify-content: flex-start;
+  }
 }
 
-/* ------------------------------------------------------------------
- * Portfolio header controls
- * ------------------------------------------------------------------ */
+@media (max-width: 760px) {
+  .page-header-with-actions {
+    display: grid;
+  }
 
-.portfolio-header-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: flex-end;
-  justify-content: flex-end;
+  .form-grid,
+  .portfolio-financial-grid,
+  .portfolio-insights-grid,
+  .metric-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
-.compact-select-label {
-  display: grid;
-  gap: 6px;
-  color: var(--color-muted);
-  font-weight: 800;
-}
+@media (max-width: 560px) {
+  .sidebar-nav {
+    grid-template-columns: 1fr;
+  }
 
-.compact-select-label select {
-  min-height: 44px;
-  padding: 10px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  background: #ffffff;
-  color: var(--color-text);
-  font-weight: 800;
-}
+  .main-content {
+    padding: 16px;
+  }
 
-/* ------------------------------------------------------------------
- * Action buttons and info messages
- * ------------------------------------------------------------------ */
-
-.secondary-button {
-  min-height: 44px;
-  padding: 10px 16px;
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  background: #ffffff;
-  color: var(--color-text);
-  font-weight: 900;
-  cursor: pointer;
-}
-
-.secondary-button:hover {
-  background: #f8fafc;
-}
-
-.secondary-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.info-box {
-  padding: 14px 16px;
-  border: 1px solid #bfdbfe;
-  border-radius: var(--radius-card);
-  background: #eff6ff;
-  color: #1d4ed8;
-  font-weight: 800;
-  line-height: 1.5;
+  .table-card,
+  .detail-card,
+  .form-card,
+  .login-card,
+  .toolbar-card {
+    padding: 18px;
+  }
 }

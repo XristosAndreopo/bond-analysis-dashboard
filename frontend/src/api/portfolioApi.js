@@ -37,10 +37,15 @@ export async function fetchPortfolio(baseCurrency = "EUR") {
 /**
  * Fetch watchlist data for the authenticated user.
  *
+ * @param {string} baseCurrency - Selected base currency for FX conversion.
  * @returns {Promise<object>} Watchlist data.
  */
-export async function fetchWatchlist() {
-  const response = await apiClient.get("/watchlist/");
+export async function fetchWatchlist(baseCurrency = "EUR") {
+  const response = await apiClient.get("/watchlist/", {
+    params: {
+      base_currency: baseCurrency,
+    },
+  });
 
   return response.data;
 }

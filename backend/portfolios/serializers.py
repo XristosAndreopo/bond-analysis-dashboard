@@ -274,13 +274,41 @@ class PortfolioRowSerializer(serializers.Serializer):
         max_digits=20,
         decimal_places=6,
     )
-
     original_position_value = serializers.DecimalField(
         max_digits=20,
         decimal_places=6,
     )
     original_currency = serializers.CharField()
     converted_position_value = serializers.DecimalField(
+        max_digits=20,
+        decimal_places=6,
+        allow_null=True,
+    )
+    portfolio_base_currency = serializers.CharField()
+    fx_rate_to_base = serializers.DecimalField(
+        max_digits=18,
+        decimal_places=8,
+        allow_null=True,
+    )
+    fx_rate_missing = serializers.BooleanField()
+    fx_method = serializers.CharField()
+
+
+class WatchlistRowSerializer(serializers.Serializer):
+    """
+    Serializer for FX-aware Watchlist rows.
+
+    These rows are calculated by analytics.watchlist_services.
+    """
+
+    user_bond = UserBondReadSerializer()
+    original_market_price = serializers.DecimalField(
+        max_digits=20,
+        decimal_places=6,
+        allow_null=True,
+    )
+    original_currency = serializers.CharField()
+    converted_market_price = serializers.DecimalField(
         max_digits=20,
         decimal_places=6,
         allow_null=True,
