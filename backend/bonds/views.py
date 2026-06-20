@@ -1,5 +1,11 @@
 """
-API views for bonds, market data, and FX rates.
+API views for bonds, market data, FX rates, and live FX updates.
+
+This module exposes API endpoints for:
+- bond master data
+- bond market data
+- manual FX rates
+- live FX rate update action
 
 Market data and FX rates use an upsert-style behavior. If a record already
 exists for the same unique fields, it is updated instead of returning a
@@ -10,15 +16,26 @@ from django.db.models import Q
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
+from bonds.fx_services import FXRateUpdateError, update_latest_fx_rates
+
 from .models import Bond, BondMarketData, FXRate
-from .serializers import BondMarketDataSerializer, BondSerializer, FXRateSerializer
+from .serializers import (
+    BondMarketDataSerializer,
+    BondSerializer,
+    FXRateSerializer,
+    FXRateUpdateRequestSerializer,
+)
 
 
 class BondViewSet(ModelViewSet):
     """
     API endpoint for bond master data.
+
+    Authenticated users can create and read bond records. Bonds are shared
+    master data, while Portfolio and Watchlist ownership remains user-specific.
     """
 
     permission_classes = [IsAuthenticated]
@@ -27,6 +44,9 @@ class BondViewSet(ModelViewSet):
     def get_queryset(self):
         """
         Return bonds filtered by optional search query.
+
+        Query parameters:
+            search: Optional text search against ISIN, name, or issuer.
         """
         queryset = Bond.objects.all().order_by("isin")
         search = self.request.query_params.get("search")
@@ -44,6 +64,9 @@ class BondViewSet(ModelViewSet):
 class BondMarketDataViewSet(ModelViewSet):
     """
     API endpoint for bond market data.
+
+    Saving market data automatically triggers recalculation of related analyses
+    through Django signals.
     """
 
     permission_classes = [IsAuthenticated]
@@ -52,6 +75,9 @@ class BondMarketDataViewSet(ModelViewSet):
     def get_queryset(self):
         """
         Return market data filtered by optional bond id.
+
+        Query parameters:
+            bond: Optional bond id.
         """
         queryset = BondMarketData.objects.select_related(
             "bond",
@@ -71,7 +97,12 @@ class BondMarketDataViewSet(ModelViewSet):
         """
         Create or update market data.
 
-        If a record exists for the same bond, quote_date, and source, update it.
+        If a record already exists for the same:
+        - bond
+        - quote_date
+        - source
+
+        then the existing record is updated.
         """
         bond_id = request.data.get("bond")
         quote_date = request.data.get("quote_date")
@@ -129,6 +160,10 @@ class FXRateViewSet(ModelViewSet):
     def get_queryset(self):
         """
         Return FX rates filtered by optional currencies.
+
+        Query parameters:
+            base_currency: Optional source currency.
+            quote_currency: Optional target currency.
         """
         queryset = FXRate.objects.all().order_by(
             "-rate_date",
@@ -151,13 +186,13 @@ class FXRateViewSet(ModelViewSet):
         """
         Create or update FX rate.
 
-        If a record exists for the same:
+        If a record already exists for the same:
         - base_currency
         - quote_currency
         - rate_date
         - source
 
-        update it instead of creating duplicate data.
+        then the existing record is updated.
         """
         base_currency = (request.data.get("base_currency") or "").upper()
         quote_currency = (request.data.get("quote_currency") or "").upper()
@@ -195,4 +230,70 @@ class FXRateViewSet(ModelViewSet):
         return Response(
             serializer.data,
             status=status.HTTP_201_CREATED,
+        )
+
+
+class FXRateUpdateAPIView(APIView):
+    """
+    API endpoint for updating live FX rates.
+
+    This endpoint allows the frontend to trigger FX updates without using the
+    terminal management command.
+
+    Expected payload:
+        {
+            "quote_currency": "EUR",
+            "base_currencies": ["USD", "GBP", "CHF", "JPY"]
+        }
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        """
+        Fetch and save latest FX rates.
+        """
+        serializer = FXRateUpdateRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        quote_currency = serializer.validated_data.get(
+            "quote_currency",
+            "EUR",
+        )
+        base_currencies = serializer.validated_data.get(
+            "base_currencies",
+            None,
+        )
+
+        try:
+            result = update_latest_fx_rates(
+                quote_currency=quote_currency,
+                base_currencies=base_currencies,
+            )
+        except FXRateUpdateError as exc:
+            return Response(
+                {
+                    "updated": [],
+                    "errors": [str(exc)],
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        updated_rows = [
+            {
+                "base_currency": item.base_currency,
+                "quote_currency": item.quote_currency,
+                "rate_date": item.rate_date,
+                "rate": str(item.rate),
+                "created": item.created,
+            }
+            for item in result["updated"]
+        ]
+
+        return Response(
+            {
+                "updated": updated_rows,
+                "errors": result["errors"],
+            },
+            status=status.HTTP_200_OK,
         )

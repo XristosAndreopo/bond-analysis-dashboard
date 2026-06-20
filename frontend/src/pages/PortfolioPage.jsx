@@ -3,11 +3,16 @@
  *
  * Displays bonds owned by the user and backend-calculated portfolio-level
  * financial metrics using FX conversion into a selected base currency.
+ *
+ * The page also allows the user to trigger live FX rate updates from the
+ * frontend. The backend fetches FX rates, stores them in the database, and then
+ * the Portfolio is reloaded with the latest converted values.
  */
 
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
+import { updateFXRates } from "../api/bondsApi";
 import { fetchPortfolio } from "../api/portfolioApi";
 import Disclaimer from "../components/Disclaimer";
 import RiskBadge from "../components/RiskBadge";
@@ -25,10 +30,14 @@ function PortfolioPage() {
   const [portfolioData, setPortfolioData] = useState(null);
   const [baseCurrency, setBaseCurrency] = useState("EUR");
   const [errorMessage, setErrorMessage] = useState("");
+  const [isUpdatingFx, setIsUpdatingFx] = useState(false);
+  const [fxUpdateMessage, setFxUpdateMessage] = useState("");
 
   useEffect(() => {
     async function loadPortfolio() {
       try {
+        setErrorMessage("");
+
         const data = await fetchPortfolio(baseCurrency);
         setPortfolioData(data);
       } catch (error) {
@@ -41,6 +50,7 @@ function PortfolioPage() {
 
   function handleBaseCurrencyChange(event) {
     setBaseCurrency(event.target.value);
+    setFxUpdateMessage("");
   }
 
   if (errorMessage) {
@@ -52,12 +62,54 @@ function PortfolioPage() {
   }
 
   const rows = portfolioData.items || [];
-  const summary = portfolioData.summary;
+  const summary = portfolioData.summary || {};
   const metrics = portfolioData.portfolio_metrics || {};
+
   const portfolioBaseCurrency =
     metrics.portfolio_base_currency ||
     summary.portfolio_base_currency ||
     baseCurrency;
+
+  async function handleUpdateFXRates() {
+    setIsUpdatingFx(true);
+    setFxUpdateMessage("");
+
+    try {
+      const currenciesInPortfolio = rows
+        .map((row) => row.original_currency || row.user_bond?.bond?.currency)
+        .filter(Boolean);
+
+      const uniqueCurrencies = [...new Set(currenciesInPortfolio)];
+
+      const baseCurrencies = uniqueCurrencies.filter(
+        (currency) => currency !== baseCurrency
+      );
+
+      const fallbackCurrencies =
+        baseCurrencies.length > 0
+          ? baseCurrencies
+          : ["USD", "GBP", "CHF", "JPY"];
+
+      const result = await updateFXRates({
+        quote_currency: baseCurrency,
+        base_currencies: fallbackCurrencies,
+      });
+
+      const updatedCount = result.updated?.length || 0;
+      const errorCount = result.errors?.length || 0;
+
+      setFxUpdateMessage(
+        `FX update completed. Updated: ${updatedCount}, Errors: ${errorCount}.`
+      );
+
+      const refreshedPortfolio = await fetchPortfolio(baseCurrency);
+      setPortfolioData(refreshedPortfolio);
+    } catch (error) {
+      setFxUpdateMessage("FX update failed. Έλεγξε το backend terminal.");
+    } finally {
+      setIsUpdatingFx(false);
+    }
+  }
 
   return (
     <section className="page-section">
@@ -82,6 +134,15 @@ function PortfolioPage() {
             </select>
           </label>
 
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={handleUpdateFXRates}
+            disabled={isUpdatingFx}
+          >
+            {isUpdatingFx ? "Updating FX..." : "Update FX Rates"}
+          </button>
+
           <Link
             to="/positions/new?type=PORTFOLIO"
             className="primary-link-button"
@@ -96,6 +157,8 @@ function PortfolioPage() {
       {metrics.mixed_currency_warning && (
         <div className="warning-box">{metrics.mixed_currency_warning}</div>
       )}
+
+      {fxUpdateMessage && <div className="info-box">{fxUpdateMessage}</div>}
 
       <div className="summary-grid">
         <div className="summary-card">
@@ -274,8 +337,11 @@ function PortfolioPage() {
                       <td>
                         <Link to={`/positions/${item.id}`}>{bond.name}</Link>
                       </td>
+
                       <td>{bond.isin}</td>
+
                       <td>{bond.currency}</td>
+
                       <td>
                         {formatMoney(
                           row.original_position_value,
@@ -283,11 +349,13 @@ function PortfolioPage() {
                           2
                         )}
                       </td>
+
                       <td>
                         {row.fx_rate_missing
                           ? "Missing"
                           : formatDecimal(row.fx_rate_to_base, 6)}
                       </td>
+
                       <td>
                         {row.fx_rate_missing
                           ? "-"
@@ -297,17 +365,24 @@ function PortfolioPage() {
                               2
                             )}
                       </td>
+
                       <td>{formatRatioAsPercent(row.weight, 2)}</td>
+
                       <td>{formatPercent(marketData?.ytm, 2)}</td>
+
                       <td>{formatPercent(analysis?.current_yield, 2)}</td>
+
                       <td>{formatDecimal(analysis?.modified_duration, 2)}</td>
+
                       <td>{formatDecimal(analysis?.risk_score, 2)}</td>
+
                       <td>
                         <RiskBadge
                           riskLevel={analysis?.risk_level}
                           label={analysis?.risk_level_label}
                         />
                       </td>
+
                       <td>
                         <SignalBadge
                           signal={analysis?.final_signal}
@@ -372,11 +447,7 @@ function ExposureList({ items, portfolioBaseCurrency, emptyMessage }) {
             <strong>{item.currency}</strong>
             <span>
               {formatMoney(item.original_value, item.currency, 2)} →{" "}
-              {formatMoney(
-                item.converted_value,
-                portfolioBaseCurrency,
-                2
-              )}
+              {formatMoney(item.converted_value, portfolioBaseCurrency, 2)}
             </span>
           </div>
 
@@ -400,11 +471,7 @@ function CouponIncomeList({ items, portfolioBaseCurrency, emptyMessage }) {
             <strong>{item.currency}</strong>
             <span>
               {formatMoney(item.original_value, item.currency, 2)} →{" "}
-              {formatMoney(
-                item.converted_value,
-                portfolioBaseCurrency,
-                2
-              )}
+              {formatMoney(item.converted_value, portfolioBaseCurrency, 2)}
             </span>
           </div>
 
