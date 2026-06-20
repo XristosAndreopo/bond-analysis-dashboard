@@ -11,6 +11,7 @@ import ProtectedRoute from "./routes/ProtectedRoute";
 import AddPositionPage from "./pages/AddPositionPage";
 import BondDetailPage from "./pages/BondDetailPage";
 import DashboardPage from "./pages/DashboardPage";
+import DiscoverBondsPage from "./pages/DiscoverBondsPage";
 import FXRatesPage from "./pages/FXRatesPage";
 import LoginPage from "./pages/LoginPage";
 import PortfolioPage from "./pages/PortfolioPage";
@@ -33,6 +34,7 @@ function App() {
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="portfolio" element={<PortfolioPage />} />
         <Route path="watchlist" element={<WatchlistPage />} />
+        <Route path="discover-bonds" element={<DiscoverBondsPage />} />
         <Route path="fx-rates" element={<FXRatesPage />} />
         <Route path="positions/new" element={<AddPositionPage />} />
         <Route path="positions/:positionId" element={<BondDetailPage />} />

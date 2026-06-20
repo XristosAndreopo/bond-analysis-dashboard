@@ -9,17 +9,19 @@ This module contains serializers for:
 - Bond discovery runs
 - Bond discovery candidates
 
-Discovery serializers expose provider-validated candidate data. They do not
-trigger AI reasoning and they do not treat AI as a data source.
+Discovery candidates include preview risk/signal fields. These preview fields
+are calculated dynamically and are not stored in the database.
 """
 
 from rest_framework import serializers
 
+from bonds.discovery.preview_signal import evaluate_candidate_preview
 from bonds.discovery.rating_utils import (
     INVESTMENT_GRADE_MIN_RATING,
     RatingError,
     normalize_rating,
 )
+
 from .models import (
     Bond,
     BondCandidate,
@@ -215,17 +217,15 @@ class FXRateUpdateRequestSerializer(serializers.Serializer):
 
 class DiscoveryRunSerializer(serializers.ModelSerializer):
     """
-    Read serializer for bond discovery runs.
-
-    A discovery run shows one execution of the discovery engine for one user.
+    Read-only serializer for DiscoveryRun records.
     """
 
-    status_label = serializers.CharField(
-        source="get_status_display",
-        read_only=True,
-    )
     username = serializers.CharField(
         source="user.username",
+        read_only=True,
+    )
+    status_label = serializers.CharField(
+        source="get_status_display",
         read_only=True,
     )
 
@@ -254,16 +254,13 @@ class DiscoveryRunSerializer(serializers.ModelSerializer):
 
 class BondCandidateSerializer(serializers.ModelSerializer):
     """
-    Read serializer for discovered bond candidates.
+    Read-only serializer for discovered bond candidates.
 
-    Candidates are user-specific and become Watchlist items only when the user
-    explicitly chooses Add to Watchlist.
+    The preview fields are calculated dynamically and are not database fields.
+    They help the frontend show a first-level candidate signal before the bond
+    is added to the user's Watchlist.
     """
 
-    status_label = serializers.CharField(
-        source="get_status_display",
-        read_only=True,
-    )
     username = serializers.CharField(
         source="user.username",
         read_only=True,
@@ -272,6 +269,16 @@ class BondCandidateSerializer(serializers.ModelSerializer):
         source="discovery_run.id",
         read_only=True,
     )
+    status_label = serializers.CharField(
+        source="get_status_display",
+        read_only=True,
+    )
+
+    preview_risk_level = serializers.SerializerMethodField()
+    preview_risk_label = serializers.SerializerMethodField()
+    preview_signal = serializers.SerializerMethodField()
+    preview_signal_label = serializers.SerializerMethodField()
+    preview_reasoning = serializers.SerializerMethodField()
 
     class Meta:
         model = BondCandidate
@@ -295,12 +302,59 @@ class BondCandidateSerializer(serializers.ModelSerializer):
             "source_url",
             "ai_summary",
             "ai_reasoning",
+            "preview_risk_level",
+            "preview_risk_label",
+            "preview_signal",
+            "preview_signal_label",
+            "preview_reasoning",
             "status",
             "status_label",
             "created_at",
             "updated_at",
         ]
         read_only_fields = fields
+
+    def get_preview_risk_level(self, obj):
+        """
+        Return preview risk level code.
+        """
+        return self._get_preview(obj).preview_risk_level
+
+    def get_preview_risk_label(self, obj):
+        """
+        Return preview risk label.
+        """
+        return self._get_preview(obj).preview_risk_label
+
+    def get_preview_signal(self, obj):
+        """
+        Return preview signal code.
+        """
+        return self._get_preview(obj).preview_signal
+
+    def get_preview_signal_label(self, obj):
+        """
+        Return preview signal label.
+        """
+        return self._get_preview(obj).preview_signal_label
+
+    def get_preview_reasoning(self, obj):
+        """
+        Return preview reasoning text.
+        """
+        return self._get_preview(obj).preview_reasoning
+
+    def _get_preview(self, obj):
+        """
+        Evaluate and cache preview data for one serializer object.
+
+        SerializerMethodField methods are called separately, so caching avoids
+        recalculating the same preview multiple times for the same object.
+        """
+        if not hasattr(obj, "_cached_candidate_preview"):
+            obj._cached_candidate_preview = evaluate_candidate_preview(obj)
+
+        return obj._cached_candidate_preview
 
 
 class RunBondDiscoverySerializer(serializers.Serializer):
@@ -311,24 +365,18 @@ class RunBondDiscoverySerializer(serializers.Serializer):
         {
             "source": "static_provider",
             "min_rating": "BBB-",
-            "currencies": ["USD", "EUR"],
-            "countries": ["US", "GR"]
+            "currencies": ["EUR", "USD"],
+            "countries": ["GR", "US"]
         }
 
-    All fields are optional for MVP. If omitted:
-        source = static_provider
-        min_rating = BBB-
-        currencies = []
-        countries = []
+    All fields are optional for the MVP.
     """
 
     source = serializers.CharField(
-        max_length=100,
         required=False,
         default="static_provider",
     )
     min_rating = serializers.CharField(
-        max_length=20,
         required=False,
         default=INVESTMENT_GRADE_MIN_RATING,
     )
@@ -336,21 +384,22 @@ class RunBondDiscoverySerializer(serializers.Serializer):
         child=serializers.CharField(max_length=3),
         required=False,
         allow_empty=True,
+        default=list,
     )
     countries = serializers.ListField(
         child=serializers.CharField(max_length=2),
         required=False,
         allow_empty=True,
+        default=list,
     )
 
     def validate_source(self, value):
         """
-        Validate provider source.
+        Validate discovery source.
 
-        The MVP supports only the static provider. CSV/API providers can be
-        added later without changing the frontend contract.
+        MVP supports only static_provider.
         """
-        normalized_value = value.strip()
+        normalized_value = value.strip().lower()
 
         if normalized_value != "static_provider":
             raise serializers.ValidationError(
@@ -361,7 +410,7 @@ class RunBondDiscoverySerializer(serializers.Serializer):
 
     def validate_min_rating(self, value):
         """
-        Validate and normalize minimum credit rating.
+        Normalize and validate the minimum rating.
         """
         try:
             return normalize_rating(value)
@@ -370,11 +419,14 @@ class RunBondDiscoverySerializer(serializers.Serializer):
 
     def validate_currencies(self, value):
         """
-        Validate and normalize currency filters.
+        Normalize currency filters.
         """
         normalized_currencies = []
 
         for currency in value:
+            if not currency:
+                continue
+
             normalized_currency = currency.upper().strip()
 
             if len(normalized_currency) != 3:
@@ -389,16 +441,19 @@ class RunBondDiscoverySerializer(serializers.Serializer):
 
     def validate_countries(self, value):
         """
-        Validate and normalize country filters.
+        Normalize country filters.
         """
         normalized_countries = []
 
         for country in value:
+            if not country:
+                continue
+
             normalized_country = country.upper().strip()
 
             if len(normalized_country) != 2:
                 raise serializers.ValidationError(
-                    "Each country must be a 2-letter code."
+                    "Each country must be a 2-letter ISO-style code."
                 )
 
             if normalized_country not in normalized_countries:

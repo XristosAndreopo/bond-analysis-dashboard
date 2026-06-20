@@ -351,7 +351,7 @@ textarea {
 
 table {
   width: 100%;
-  min-width: 900px;
+  min-width: 1250px;
   border-collapse: collapse;
 }
 
@@ -414,6 +414,7 @@ td a {
  * 5. Buttons and forms
  * ------------------------------------------------------------------ */
 
+.primary-button,
 .primary-link-button,
 .secondary-link-button,
 .secondary-button,
@@ -430,6 +431,7 @@ td a {
   text-decoration: none;
 }
 
+.primary-button,
 .primary-link-button,
 .form-actions button {
   border: 0;
@@ -437,9 +439,16 @@ td a {
   color: #ffffff;
 }
 
+.primary-button:hover,
 .primary-link-button:hover,
 .form-actions button:hover {
   background: var(--color-primary-dark);
+}
+
+.primary-button:disabled,
+.form-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
 }
 
 .secondary-button,
@@ -1079,5 +1088,82 @@ td a {
 @media (max-width: 900px) {
   .stress-card-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ------------------------------------------------------------------
+ * 13. Watchlist and Discovery pages
+ * ------------------------------------------------------------------ */
+
+.section-header {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.section-header h2 {
+  margin: 0 0 6px;
+  font-size: 1.15rem;
+}
+
+.section-header p {
+  margin: 0;
+  color: var(--color-muted);
+  line-height: 1.6;
+}
+
+.section-header-with-actions {
+  align-items: center;
+}
+
+.summary-card-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.table-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  min-width: 130px;
+}
+
+.small-button {
+  min-height: 34px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .section-header,
+  .section-header-with-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .summary-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .summary-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .table-action-buttons {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .small-button {
+    width: 100%;
   }
 }
