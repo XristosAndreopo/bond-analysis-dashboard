@@ -1,16 +1,16 @@
 """
-Django admin configuration for bond models.
+Django admin configuration for bond-related models.
 """
 
 from django.contrib import admin
 
-from .models import Bond, BondMarketData
+from .models import Bond, BondMarketData, FXRate
 
 
 @admin.register(Bond)
 class BondAdmin(admin.ModelAdmin):
     """
-    Admin interface for Bond records.
+    Admin interface for Bond master data.
     """
 
     list_display = (
@@ -19,16 +19,16 @@ class BondAdmin(admin.ModelAdmin):
         "issuer",
         "bond_type",
         "currency",
-        "credit_rating",
+        "annual_coupon_rate",
         "maturity_date",
-        "years_to_maturity",
+        "credit_rating",
+        "market_liquidity",
     )
     list_filter = (
         "bond_type",
         "currency",
-        "seniority",
-        "is_callable",
         "market_liquidity",
+        "is_callable",
     )
     search_fields = (
         "isin",
@@ -42,7 +42,7 @@ class BondAdmin(admin.ModelAdmin):
 @admin.register(BondMarketData)
 class BondMarketDataAdmin(admin.ModelAdmin):
     """
-    Admin interface for BondMarketData records.
+    Admin interface for bond market data.
     """
 
     list_display = (
@@ -64,4 +64,39 @@ class BondMarketDataAdmin(admin.ModelAdmin):
         "bond__name",
         "source",
     )
-    ordering = ("-quote_date", "-created_at")
+    ordering = (
+        "-quote_date",
+        "bond__isin",
+    )
+
+
+@admin.register(FXRate)
+class FXRateAdmin(admin.ModelAdmin):
+    """
+    Admin interface for FX rates.
+    """
+
+    list_display = (
+        "base_currency",
+        "quote_currency",
+        "rate_date",
+        "rate",
+        "source",
+        "created_at",
+    )
+    list_filter = (
+        "base_currency",
+        "quote_currency",
+        "rate_date",
+        "source",
+    )
+    search_fields = (
+        "base_currency",
+        "quote_currency",
+        "source",
+    )
+    ordering = (
+        "-rate_date",
+        "base_currency",
+        "quote_currency",
+    )
