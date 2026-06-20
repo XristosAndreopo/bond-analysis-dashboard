@@ -23,6 +23,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from analytics.portfolio_services import calculate_portfolio_analytics
+from analytics.stress_test_services import calculate_interest_rate_stress_test
 from analytics.watchlist_services import calculate_watchlist_analytics
 from portfolios.models import UserBond
 from portfolios.serializers import (
@@ -218,6 +219,92 @@ def serialize_portfolio_metrics(metrics):
         "mixed_currency_warning": metrics["mixed_currency_warning"],
     }
 
+def serialize_interest_rate_stress_test(stress_test):
+    """
+    Serialize interest rate stress test data.
+
+    Args:
+        stress_test: Stress test dictionary.
+
+    Returns:
+        JSON-safe dictionary.
+    """
+    return {
+        "portfolio_base_currency": stress_test["portfolio_base_currency"],
+        "method": stress_test["method"],
+        "disclaimer": stress_test["disclaimer"],
+        "current_total_value": decimal_to_string(
+            stress_test["current_total_value"]
+        ),
+        "scenario_rows": [
+            serialize_stress_scenario_row(row)
+            for row in stress_test["scenario_rows"]
+        ],
+        "position_rows": [
+            serialize_stress_position_row(row)
+            for row in stress_test["position_rows"]
+        ],
+        "best_scenario": (
+            serialize_stress_scenario_row(stress_test["best_scenario"])
+            if stress_test["best_scenario"] is not None
+            else None
+        ),
+        "worst_scenario": (
+            serialize_stress_scenario_row(stress_test["worst_scenario"])
+            if stress_test["worst_scenario"] is not None
+            else None
+        ),
+        "has_excluded_positions": stress_test["has_excluded_positions"],
+        "excluded_positions": stress_test["excluded_positions"],
+    }
+
+
+def serialize_stress_scenario_row(row):
+    """
+    Serialize one portfolio-level stress scenario row.
+    """
+    return {
+        "scenario": decimal_to_string(row["scenario"]),
+        "scenario_label": row["scenario_label"],
+        "estimated_portfolio_value": decimal_to_string(
+            row["estimated_portfolio_value"]
+        ),
+        "gain_loss": decimal_to_string(row["gain_loss"]),
+        "gain_loss_percent": decimal_to_string(row["gain_loss_percent"]),
+        "portfolio_base_currency": row["portfolio_base_currency"],
+    }
+
+
+def serialize_stress_position_row(row):
+    """
+    Serialize one position-level stress test row.
+    """
+    return {
+        "user_bond_id": row["user_bond_id"],
+        "bond_name": row["bond_name"],
+        "isin": row["isin"],
+        "currency": row["currency"],
+        "current_value": decimal_to_string(row["current_value"]),
+        "modified_duration": decimal_to_string(row["modified_duration"]),
+        "risk_score": decimal_to_string(row["risk_score"]),
+        "risk_level": row["risk_level"],
+        "final_signal": row["final_signal"],
+        "portfolio_base_currency": row["portfolio_base_currency"],
+        "scenario_impacts": [
+            {
+                "scenario": decimal_to_string(impact["scenario"]),
+                "scenario_label": impact["scenario_label"],
+                "estimated_value": decimal_to_string(
+                    impact["estimated_value"]
+                ),
+                "gain_loss": decimal_to_string(impact["gain_loss"]),
+                "gain_loss_percent": decimal_to_string(
+                    impact["gain_loss_percent"]
+                ),
+            }
+            for impact in row["scenario_impacts"]
+        ],
+    }
 
 def create_update_or_move_user_bond(request, target_holding_type):
     """
@@ -444,6 +531,14 @@ class PortfolioAPIView(UserBondQuerysetMixin, APIView):
             many=True,
         )
 
+
+        interest_rate_stress_test = calculate_interest_rate_stress_test(
+            portfolio_rows=portfolio_analytics["rows"],
+            portfolio_base_currency=portfolio_analytics["metrics"][
+                "portfolio_base_currency"
+            ],
+        )
+
         return Response(
             {
                 "disclaimer": DISCLAIMER_TEXT,
@@ -451,10 +546,14 @@ class PortfolioAPIView(UserBondQuerysetMixin, APIView):
                 "portfolio_metrics": serialize_portfolio_metrics(
                     portfolio_analytics["metrics"]
                 ),
+                "interest_rate_stress_test": serialize_interest_rate_stress_test(
+                    interest_rate_stress_test
+                ),
                 "items": row_serializer.data,
             }
         )
 
+ 
     def post(self, request):
         """
         Create, update, move, or reactivate a bond into Portfolio.

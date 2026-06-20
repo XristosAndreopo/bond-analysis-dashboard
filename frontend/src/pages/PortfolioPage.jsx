@@ -4,7 +4,13 @@
  * Displays bonds owned by the user and backend-calculated portfolio-level
  * financial metrics using FX conversion into a selected base currency.
  *
- * FX rates are managed centrally from the FX Rates page.
+ * This page also displays the Interest Rate Stress Test before the detailed
+ * Portfolio Table. The stress test estimates how the portfolio value may change
+ * under parallel yield shocks using modified duration.
+ *
+ * Important:
+ *   FX rates are managed centrally from the FX Rates page.
+ *   Portfolio only consumes already-stored FX data.
  */
 
 import { useEffect, useState } from "react";
@@ -58,6 +64,7 @@ function PortfolioPage() {
   const rows = portfolioData.items || [];
   const summary = portfolioData.summary || {};
   const metrics = portfolioData.portfolio_metrics || {};
+  const stressTest = portfolioData.interest_rate_stress_test || {};
 
   const portfolioBaseCurrency =
     metrics.portfolio_base_currency ||
@@ -207,6 +214,11 @@ function PortfolioPage() {
           />
         </PortfolioInsightCard>
       </div>
+
+      <InterestRateStressTestSection
+        stressTest={stressTest}
+        portfolioBaseCurrency={portfolioBaseCurrency}
+      />
 
       <div className="table-card">
         <h2>Portfolio Table</h2>
@@ -367,6 +379,257 @@ function ExposureList({ items, portfolioBaseCurrency, emptyMessage }) {
       ))}
     </div>
   );
+}
+
+function InterestRateStressTestSection({
+  stressTest,
+  portfolioBaseCurrency,
+}) {
+  const scenarioRows = stressTest.scenario_rows || [];
+  const positionRows = stressTest.position_rows || [];
+  const excludedPositions = stressTest.excluded_positions || [];
+
+  if (scenarioRows.length === 0) {
+    return (
+      <div className="table-card">
+        <h2>Interest Rate Stress Test</h2>
+        <p className="muted-text">
+          Δεν υπάρχουν αρκετά δεδομένα για stress test. Χρειάζεται position
+          value και modified duration.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="stress-test-section">
+      <div className="page-header">
+        <h1>Interest Rate Stress Test</h1>
+        <p>
+          Εκτίμηση μεταβολής αξίας Portfolio με βάση modified duration. Δεν
+          περιλαμβάνει convexity, credit spread shocks ή FX shocks.
+        </p>
+      </div>
+
+      {stressTest.disclaimer && (
+        <div className="warning-box">{stressTest.disclaimer}</div>
+      )}
+
+      {stressTest.has_excluded_positions && (
+        <div className="warning-box">
+          Ορισμένες θέσεις εξαιρέθηκαν από το stress test επειδή λείπει
+          duration, αξία θέσης ή FX rate.
+        </div>
+      )}
+
+      <div className="stress-card-grid">
+        <StressScenarioCard
+          title="Best Scenario"
+          scenario={stressTest.best_scenario}
+          portfolioBaseCurrency={portfolioBaseCurrency}
+        />
+
+        <StressScenarioCard
+          title="Worst Scenario"
+          scenario={stressTest.worst_scenario}
+          portfolioBaseCurrency={portfolioBaseCurrency}
+        />
+
+        <div className="stress-card">
+          <span>Method</span>
+          <strong>Modified Duration</strong>
+          <p>{stressTest.method}</p>
+        </div>
+      </div>
+
+      <div className="table-card">
+        <h2>Portfolio Scenario Summary</h2>
+
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Scenario</th>
+                <th>Estimated Portfolio Value</th>
+                <th>Gain / Loss</th>
+                <th>Gain / Loss %</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {scenarioRows.map((row) => (
+                <tr key={row.scenario_label}>
+                  <td>
+                    <strong>{row.scenario_label}</strong>
+                  </td>
+
+                  <td>
+                    {formatMoney(
+                      row.estimated_portfolio_value,
+                      portfolioBaseCurrency,
+                      2
+                    )}
+                  </td>
+
+                  <td className={getGainLossClass(row.gain_loss)}>
+                    {formatMoney(row.gain_loss, portfolioBaseCurrency, 2)}
+                  </td>
+
+                  <td className={getGainLossClass(row.gain_loss)}>
+                    {formatRatioAsPercent(row.gain_loss_percent, 2)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="table-card">
+        <h2>Per-Bond Interest Rate Impact</h2>
+
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Bond</th>
+                <th>ISIN</th>
+                <th>Current Value</th>
+                <th>Modified Duration</th>
+                <th>+1.00% Impact</th>
+                <th>+2.00% Impact</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {positionRows.length === 0 ? (
+                <tr>
+                  <td colSpan="6">Δεν υπάρχουν διαθέσιμες θέσεις.</td>
+                </tr>
+              ) : (
+                positionRows.map((row) => {
+                  const onePercentImpact = findScenarioImpact(
+                    row.scenario_impacts,
+                    "+1.00%"
+                  );
+                  const twoPercentImpact = findScenarioImpact(
+                    row.scenario_impacts,
+                    "+2.00%"
+                  );
+
+                  return (
+                    <tr key={row.user_bond_id}>
+                      <td>{row.bond_name}</td>
+
+                      <td>{row.isin}</td>
+
+                      <td>
+                        {formatMoney(
+                          row.current_value,
+                          portfolioBaseCurrency,
+                          2
+                        )}
+                      </td>
+
+                      <td>{formatDecimal(row.modified_duration, 2)}</td>
+
+                      <td className={getGainLossClass(onePercentImpact?.gain_loss)}>
+                        {formatMoney(
+                          onePercentImpact?.gain_loss,
+                          portfolioBaseCurrency,
+                          2
+                        )}
+                      </td>
+
+                      <td className={getGainLossClass(twoPercentImpact?.gain_loss)}>
+                        {formatMoney(
+                          twoPercentImpact?.gain_loss,
+                          portfolioBaseCurrency,
+                          2
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {excludedPositions.length > 0 && (
+        <div className="table-card">
+          <h2>Excluded Positions</h2>
+
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Bond</th>
+                  <th>ISIN</th>
+                  <th>Reason</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {excludedPositions.map((position) => (
+                  <tr key={position.isin}>
+                    <td>{position.bond_name}</td>
+                    <td>{position.isin}</td>
+                    <td>{position.reason}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StressScenarioCard({ title, scenario, portfolioBaseCurrency }) {
+  if (!scenario) {
+    return (
+      <div className="stress-card">
+        <span>{title}</span>
+        <strong>-</strong>
+      </div>
+    );
+  }
+
+  return (
+    <div className="stress-card">
+      <span>{title}</span>
+      <strong>{scenario.scenario_label}</strong>
+      <p>
+        {formatMoney(scenario.gain_loss, portfolioBaseCurrency, 2)} (
+        {formatRatioAsPercent(scenario.gain_loss_percent, 2)})
+      </p>
+    </div>
+  );
+}
+
+function findScenarioImpact(impacts, scenarioLabel) {
+  if (!impacts) {
+    return null;
+  }
+
+  return impacts.find((impact) => impact.scenario_label === scenarioLabel);
+}
+
+function getGainLossClass(value) {
+  const numericValue = Number(value || 0);
+
+  if (numericValue > 0) {
+    return "positive-value";
+  }
+
+  if (numericValue < 0) {
+    return "negative-value";
+  }
+
+  return "";
 }
 
 export default PortfolioPage;
