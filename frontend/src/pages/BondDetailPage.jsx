@@ -42,6 +42,7 @@ function BondDetailPage() {
   const [marketDataForm, setMarketDataForm] = useState(getEmptyMarketDataForm());
   const [isMarketFormVisible, setIsMarketFormVisible] = useState(false);
   const [isSubmittingMarketData, setIsSubmittingMarketData] = useState(false);
+  const [isMovingPosition, setIsMovingPosition] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
@@ -56,6 +57,7 @@ function BondDetailPage() {
       setSuccessMessage("");
 
       const data = await fetchPositionDetail(positionId);
+
       setDetailData(data);
       setMarketDataForm(buildMarketDataForm(data.item));
     } catch (error) {
@@ -117,43 +119,69 @@ function BondDetailPage() {
   }
 
   async function handleMovePosition() {
-    if (!detailData?.item) {
+    if (!detailData?.item || isMovingPosition) {
       return;
     }
 
     const item = detailData.item;
+
     const targetHoldingType =
       item.holding_type === "PORTFOLIO" ? "WATCHLIST" : "PORTFOLIO";
+
+    const targetPath =
+      targetHoldingType === "PORTFOLIO" ? "/portfolio" : "/watchlist";
 
     const payload = {
       target_holding_type: targetHoldingType,
     };
 
+    /*
+    * When moving from Watchlist to Portfolio, the backend needs quantity.
+    * We avoid browser prompts because they can fail or be cancelled silently.
+    *
+    * Default logic:
+    * - quantity: 1
+    * - purchase_price: latest market price, otherwise existing purchase price,
+    *   otherwise bond face value.
+    */
     if (targetHoldingType === "PORTFOLIO") {
-      const quantity = window.prompt("Ποσότητα για μεταφορά στο Portfolio:", "1");
-
-      if (!quantity) {
-        return;
-      }
-
-      const purchasePrice = window.prompt(
-        "Τιμή αγοράς για το Portfolio:",
-        item.latest_market_data?.market_price || ""
-      );
-
-      payload.quantity = Number(quantity);
-      payload.purchase_price = purchasePrice || item.latest_market_data?.market_price;
+      payload.quantity = 1;
+      payload.purchase_price =
+        item.latest_market_data?.market_price ||
+        item.purchase_price ||
+        item.bond?.face_value ||
+        "100";
     }
 
     try {
+      setIsMovingPosition(true);
+      setErrorMessage("");
+      setSuccessMessage("");
+
       const movedItem = await movePosition(item.id, payload);
 
-      setSuccessMessage("Το ομόλογο μετακινήθηκε επιτυχώς.");
-      navigate(`/positions/${movedItem.id}`);
+      if (!movedItem?.id) {
+        setErrorMessage(
+          "Το backend δεν επέστρεψε έγκυρο position μετά τη μετακίνηση."
+        );
+        return;
+      }
+
+      navigate(targetPath);
     } catch (error) {
-      setErrorMessage("Δεν ήταν δυνατή η μετακίνηση του ομολόγου.");
+      const apiMessage =
+        error.response?.data?.detail ||
+        error.response?.data?.non_field_errors?.join(" ") ||
+        JSON.stringify(error.response?.data || {});
+
+      setErrorMessage(
+        `Δεν ήταν δυνατή η μετακίνηση του ομολόγου. ${apiMessage}`
+      );
+    } finally {
+      setIsMovingPosition(false);
     }
   }
+
 
   async function handleDeletePosition() {
     if (!detailData?.item) {
@@ -232,10 +260,13 @@ function BondDetailPage() {
             type="button"
             className="secondary-button"
             onClick={handleMovePosition}
+            disabled={isMovingPosition}
           >
-            {item.holding_type === "PORTFOLIO"
-              ? "Move to Watchlist"
-              : "Move to Portfolio"}
+            {isMovingPosition
+              ? "Moving..."
+              : item.holding_type === "PORTFOLIO"
+                ? "Move to Watchlist"
+                : "Move to Portfolio"}
           </button>
 
           <button
@@ -327,7 +358,10 @@ function BondDetailPage() {
                 value={formatPercent(analysis.current_yield, 2)}
               />
 
-              <MetricCard label="Net YTM" value={formatPercent(analysis.net_ytm, 2)} />
+              <MetricCard
+                label="Net YTM"
+                value={formatPercent(analysis.net_ytm, 2)}
+              />
 
               <MetricCard
                 label="Modified Duration"

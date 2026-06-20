@@ -7,6 +7,8 @@ The API is designed around a simple user flow:
 - The user can add a bond to Portfolio or Watchlist.
 - If the same bond exists in the opposite section, it is moved instead of
   duplicated.
+- If an inactive target record exists, it is reactivated instead of creating
+  a duplicate.
 - Analysis is recalculated automatically through model signals.
 
 Portfolio and Watchlist financial values are calculated in the backend.
@@ -42,6 +44,12 @@ DISCLAIMER_TEXT = (
 def get_opposite_holding_type(holding_type):
     """
     Return the opposite holding type.
+
+    Args:
+        holding_type: Current holding type.
+
+    Returns:
+        Opposite UserBond holding type.
     """
     if holding_type == UserBond.HoldingType.PORTFOLIO:
         return UserBond.HoldingType.WATCHLIST
@@ -52,6 +60,12 @@ def get_opposite_holding_type(holding_type):
 def decimal_to_string(value):
     """
     Convert a Decimal-like value to string for stable JSON output.
+
+    Args:
+        value: Decimal-like value.
+
+    Returns:
+        String value or None.
     """
     if value is None:
         return None
@@ -62,6 +76,12 @@ def decimal_to_string(value):
 def serialize_distribution(distribution_rows):
     """
     Serialize signal/risk distribution rows.
+
+    Args:
+        distribution_rows: Distribution rows from analytics service.
+
+    Returns:
+        List of serializable dictionaries.
     """
     return [
         {
@@ -76,6 +96,12 @@ def serialize_distribution(distribution_rows):
 def serialize_currency_rows(rows):
     """
     Serialize currency exposure or coupon-income rows.
+
+    Args:
+        rows: Currency rows from analytics service.
+
+    Returns:
+        List of serializable dictionaries.
     """
     serialized_rows = []
 
@@ -113,6 +139,13 @@ def serialize_currency_rows(rows):
 def serialize_position_insight(normalized_item, metric_key):
     """
     Serialize a portfolio insight position.
+
+    Args:
+        normalized_item: Normalized portfolio item from service.
+        metric_key: Metric key to expose.
+
+    Returns:
+        Serialized insight dict or None.
     """
     if normalized_item is None:
         return None
@@ -126,6 +159,12 @@ def serialize_position_insight(normalized_item, metric_key):
 def serialize_portfolio_metrics(metrics):
     """
     Serialize portfolio metrics calculated by the backend.
+
+    Args:
+        metrics: Metrics dictionary from portfolio service.
+
+    Returns:
+        Serializable metrics dictionary.
     """
     return {
         "portfolio_base_currency": metrics["portfolio_base_currency"],
@@ -182,10 +221,16 @@ def serialize_portfolio_metrics(metrics):
 
 def create_update_or_move_user_bond(request, target_holding_type):
     """
-    Create, update, or move a user bond item.
+    Create, update, move, or reactivate a user bond item.
 
     This function prevents the same active bond from appearing in both
     Portfolio and Watchlist for the same user.
+
+    Important:
+        Because older inactive rows may exist in the database, this function
+        reactivates an inactive target row instead of creating a duplicate.
+        This prevents unique constraint errors when moving a bond back to a
+        section where it existed before.
     """
     bond_id = request.data.get("bond")
 
@@ -203,14 +248,21 @@ def create_update_or_move_user_bond(request, target_holding_type):
 
     opposite_holding_type = get_opposite_holding_type(target_holding_type)
 
-    target_item = UserBond.objects.filter(
+    target_active_item = UserBond.objects.filter(
         user=request.user,
         bond_id=bond_id,
         holding_type=target_holding_type,
         is_active=True,
     ).first()
 
-    opposite_item = UserBond.objects.filter(
+    target_inactive_item = UserBond.objects.filter(
+        user=request.user,
+        bond_id=bond_id,
+        holding_type=target_holding_type,
+        is_active=False,
+    ).first()
+
+    opposite_active_item = UserBond.objects.filter(
         user=request.user,
         bond_id=bond_id,
         holding_type=opposite_holding_type,
@@ -218,39 +270,38 @@ def create_update_or_move_user_bond(request, target_holding_type):
     ).first()
 
     with transaction.atomic():
-        if target_item is not None:
-            serializer = UserBondWriteSerializer(
-                target_item,
-                data=request.data,
-                partial=True,
-                context={
-                    "request": request,
-                    "forced_holding_type": target_holding_type,
-                },
+        if target_active_item is not None:
+            updated_item = update_user_bond_from_request(
+                request=request,
+                instance=target_active_item,
+                target_holding_type=target_holding_type,
+                reactivate=True,
             )
-            serializer.is_valid(raise_exception=True)
-            updated_item = serializer.save()
 
-            if opposite_item is not None:
-                opposite_item.is_active = False
-                opposite_item.save(update_fields=["is_active", "updated_at"])
+            if opposite_active_item is not None:
+                deactivate_user_bond(opposite_active_item)
 
             return updated_item, status.HTTP_200_OK
 
-        if opposite_item is not None:
-            serializer = UserBondWriteSerializer(
-                opposite_item,
-                data=request.data,
-                partial=True,
-                context={
-                    "request": request,
-                    "forced_holding_type": target_holding_type,
-                },
+        if target_inactive_item is not None:
+            reactivated_item = update_user_bond_from_request(
+                request=request,
+                instance=target_inactive_item,
+                target_holding_type=target_holding_type,
+                reactivate=True,
             )
-            serializer.is_valid(raise_exception=True)
 
-            moved_item = serializer.save(
-                holding_type=target_holding_type,
+            if opposite_active_item is not None:
+                deactivate_user_bond(opposite_active_item)
+
+            return reactivated_item, status.HTTP_200_OK
+
+        if opposite_active_item is not None:
+            moved_item = update_user_bond_from_request(
+                request=request,
+                instance=opposite_active_item,
+                target_holding_type=target_holding_type,
+                reactivate=True,
             )
 
             return moved_item, status.HTTP_200_OK
@@ -265,6 +316,56 @@ def create_update_or_move_user_bond(request, target_holding_type):
         serializer.is_valid(raise_exception=True)
 
         return serializer.save(), status.HTTP_201_CREATED
+
+
+def update_user_bond_from_request(
+    request,
+    instance,
+    target_holding_type,
+    reactivate=False,
+):
+    """
+    Update a UserBond instance using request data.
+
+    Args:
+        request: DRF request.
+        instance: UserBond instance.
+        target_holding_type: Target section.
+        reactivate: Whether to force is_active=True.
+
+    Returns:
+        Updated UserBond instance.
+    """
+    serializer = UserBondWriteSerializer(
+        instance,
+        data=request.data,
+        partial=True,
+        context={
+            "request": request,
+            "forced_holding_type": target_holding_type,
+        },
+    )
+    serializer.is_valid(raise_exception=True)
+
+    extra_save_kwargs = {
+        "holding_type": target_holding_type,
+    }
+
+    if reactivate:
+        extra_save_kwargs["is_active"] = True
+
+    return serializer.save(**extra_save_kwargs)
+
+
+def deactivate_user_bond(user_bond):
+    """
+    Deactivate a UserBond item.
+
+    Args:
+        user_bond: UserBond instance.
+    """
+    user_bond.is_active = False
+    user_bond.save(update_fields=["is_active", "updated_at"])
 
 
 class UserBondQuerysetMixin:
@@ -356,7 +457,7 @@ class PortfolioAPIView(UserBondQuerysetMixin, APIView):
 
     def post(self, request):
         """
-        Create, update, or move a bond into Portfolio.
+        Create, update, move, or reactivate a bond into Portfolio.
         """
         user_bond, response_status = create_update_or_move_user_bond(
             request=request,
@@ -376,7 +477,7 @@ class WatchlistAPIView(UserBondQuerysetMixin, APIView):
     API endpoint for the Watchlist page.
 
     GET returns FX-aware Watchlist rows.
-    POST creates, updates, or moves a bond into Watchlist.
+    POST creates, updates, moves, or reactivates a bond into Watchlist.
     """
 
     permission_classes = [IsAuthenticated]
@@ -410,7 +511,7 @@ class WatchlistAPIView(UserBondQuerysetMixin, APIView):
 
     def post(self, request):
         """
-        Create, update, or move a bond into Watchlist.
+        Create, update, move, or reactivate a bond into Watchlist.
         """
         user_bond, response_status = create_update_or_move_user_bond(
             request=request,
@@ -437,7 +538,7 @@ class UserBondDetailAPIView(
 
     def get_queryset(self):
         """
-        Return user-owned bond items.
+        Return user-owned active bond items.
         """
         return self.get_user_bond_queryset()
 
@@ -498,8 +599,7 @@ class UserBondDetailAPIView(
         Soft-delete the item by marking it inactive.
         """
         instance = self.get_object()
-        instance.is_active = False
-        instance.save(update_fields=["is_active", "updated_at"])
+        deactivate_user_bond(instance)
 
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -507,6 +607,10 @@ class UserBondDetailAPIView(
 class MoveUserBondAPIView(UserBondQuerysetMixin, APIView):
     """
     API endpoint for moving a bond between Portfolio and Watchlist.
+
+    This view handles the important case where an inactive record already
+    exists in the target section. In that case, the inactive target record is
+    reactivated and the source record is deactivated.
     """
 
     permission_classes = [IsAuthenticated]
@@ -515,14 +619,14 @@ class MoveUserBondAPIView(UserBondQuerysetMixin, APIView):
         """
         Move a user bond to Portfolio or Watchlist.
         """
-        user_bond = get_object_or_404(
+        source_item = get_object_or_404(
             self.get_user_bond_queryset(),
             pk=pk,
         )
 
         serializer = MoveUserBondSerializer(
             data=request.data,
-            context={"user_bond": user_bond},
+            context={"user_bond": source_item},
         )
         serializer.is_valid(raise_exception=True)
 
@@ -530,23 +634,23 @@ class MoveUserBondAPIView(UserBondQuerysetMixin, APIView):
 
         existing_target = UserBond.objects.filter(
             user=request.user,
-            bond=user_bond.bond,
+            bond=source_item.bond,
             holding_type=target_holding_type,
-            is_active=True,
         ).exclude(
-            pk=user_bond.pk,
+            pk=source_item.pk,
         ).first()
 
         with transaction.atomic():
             if existing_target is not None:
-                target_item = self._update_existing_target(
+                target_item = self._reactivate_or_update_existing_target(
                     existing_target=existing_target,
-                    source_item=user_bond,
+                    source_item=source_item,
                     validated_data=serializer.validated_data,
+                    target_holding_type=target_holding_type,
                 )
             else:
                 target_item = self._move_current_item(
-                    user_bond=user_bond,
+                    source_item=source_item,
                     target_holding_type=target_holding_type,
                     validated_data=serializer.validated_data,
                 )
@@ -555,56 +659,74 @@ class MoveUserBondAPIView(UserBondQuerysetMixin, APIView):
 
         return Response(read_serializer.data)
 
-    def _update_existing_target(
+    def _reactivate_or_update_existing_target(
         self,
         existing_target,
         source_item,
         validated_data,
+        target_holding_type,
     ):
         """
-        Update an existing target item and deactivate the source item.
+        Reactivate or update an existing target item.
+
+        Args:
+            existing_target: Existing active or inactive target record.
+            source_item: Current active source record.
+            validated_data: Move request data.
+            target_holding_type: Target holding type.
+
+        Returns:
+            Reactivated or updated target item.
         """
-        if existing_target.holding_type == UserBond.HoldingType.PORTFOLIO:
+        existing_target.is_active = True
+        existing_target.holding_type = target_holding_type
+
+        if target_holding_type == UserBond.HoldingType.PORTFOLIO:
             existing_target.quantity = validated_data.get(
                 "quantity",
-                existing_target.quantity,
+                existing_target.quantity or 1,
             )
             existing_target.purchase_price = validated_data.get(
                 "purchase_price",
                 existing_target.purchase_price,
             )
+        else:
+            existing_target.quantity = 0
+            existing_target.purchase_price = None
 
         existing_target.save()
 
-        source_item.is_active = False
-        source_item.save(update_fields=["is_active", "updated_at"])
+        deactivate_user_bond(source_item)
 
         return existing_target
 
     def _move_current_item(
         self,
-        user_bond,
+        source_item,
         target_holding_type,
         validated_data,
     ):
         """
         Move the current item to the target section.
+
+        This path is used only when no target record exists at all.
         """
-        user_bond.holding_type = target_holding_type
+        source_item.holding_type = target_holding_type
+        source_item.is_active = True
 
         if target_holding_type == UserBond.HoldingType.PORTFOLIO:
-            user_bond.quantity = validated_data.get(
+            source_item.quantity = validated_data.get(
                 "quantity",
-                user_bond.quantity,
+                source_item.quantity or 1,
             )
-            user_bond.purchase_price = validated_data.get(
+            source_item.purchase_price = validated_data.get(
                 "purchase_price",
-                user_bond.purchase_price,
+                source_item.purchase_price,
             )
         else:
-            user_bond.quantity = 0
-            user_bond.purchase_price = None
+            source_item.quantity = 0
+            source_item.purchase_price = None
 
-        user_bond.save()
+        source_item.save()
 
-        return user_bond
+        return source_item
