@@ -2,7 +2,8 @@
  * API functions for the Watchlist Discovery Engine.
  *
  * This file contains all frontend requests related to discovered bond
- * candidates, provider status, CSV uploads, and discovery actions.
+ * candidates, provider status, CSV uploads, AI research JSON imports, and
+ * discovery actions.
  */
 
 import apiClient from "./apiClient";
@@ -48,6 +49,46 @@ export async function fetchDiscoveredBonds(params = {}) {
  */
 export async function runBondDiscovery(payload = {}) {
   const response = await apiClient.post("/discover-bonds/run/", payload);
+
+  return response.data;
+}
+
+/**
+ * Import AI-researched discovery JSON.
+ *
+ * This endpoint does not call OpenAI from the frontend. It sends already
+ * structured JSON to the backend import endpoint.
+ *
+ * The backend validates the payload and creates/updates BondCandidate records
+ * with data_origin = AI_RESEARCH.
+ *
+ * @param {object} payload - DiscoveryResearchResult JSON.
+ * @returns {Promise<object>} Import summary.
+ */
+export async function importAIResearchDiscoveryJson(payload) {
+  const response = await apiClient.post(
+    "/ai-research/import-discovery/",
+    payload
+  );
+
+  return response.data;
+}
+
+/**
+ * Import AI-researched market refresh JSON.
+ *
+ * This endpoint sends already structured market refresh JSON to the backend.
+ * The backend validates the payload and creates/updates BondMarketData records
+ * for bonds that already exist in the application.
+ *
+ * @param {object} payload - BondMarketResearchResult JSON.
+ * @returns {Promise<object>} Import summary.
+ */
+export async function importAIResearchMarketJson(payload) {
+  const response = await apiClient.post(
+    "/ai-research/import-market/",
+    payload
+  );
 
   return response.data;
 }
