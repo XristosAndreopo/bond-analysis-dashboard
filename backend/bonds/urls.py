@@ -9,12 +9,16 @@ This file exposes:
 - discovery endpoints
 - CSV upload endpoint
 - provider status endpoint
+- external provider test endpoint
 """
 
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from .discovery.provider_status_views import DiscoveryProviderStatusAPIView
+from .discovery.provider_status_views import (
+    DiscoveryExternalProviderTestAPIView,
+    DiscoveryProviderStatusAPIView,
+)
 from .discovery.upload_views import BondUniverseCSVUploadAPIView
 from .views import (
     BondCandidateDiscoveryViewSet,
@@ -51,6 +55,11 @@ urlpatterns = [
         "discover-bonds/provider-status/",
         DiscoveryProviderStatusAPIView.as_view(),
         name="discovery-provider-status",
+    ),
+    path(
+        "discover-bonds/test-external-provider/",
+        DiscoveryExternalProviderTestAPIView.as_view(),
+        name="discovery-external-provider-test",
     ),
     path("", include(router.urls)),
 ]

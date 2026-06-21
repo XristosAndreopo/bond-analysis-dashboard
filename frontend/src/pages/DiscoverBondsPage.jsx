@@ -5,6 +5,7 @@
  *
  * The frontend does not invent bond data. It only:
  * - shows provider status/configuration
+ * - lets the user test the external JSON/API provider safely
  * - lets the user download a CSV template
  * - lets the user upload a CSV bond universe
  * - lets the user choose discovery filters
@@ -35,6 +36,7 @@ import {
   fetchDiscoveryProviderStatus,
   ignoreDiscoveredBond,
   runBondDiscovery,
+  testExternalDiscoveryProvider,
   uploadDiscoveryCsv,
 } from "../api/discoveryApi";
 import RiskBadge from "../components/RiskBadge";
@@ -148,12 +150,17 @@ function DiscoverBondsPage() {
   const [lastDiscoveryRun, setLastDiscoveryRun] = useState(null);
   const [lastCsvUpload, setLastCsvUpload] = useState(null);
   const [providerStatus, setProviderStatus] = useState(null);
+  const [externalProviderTest, setExternalProviderTest] = useState(null);
+
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingProviderStatus, setIsLoadingProviderStatus] = useState(false);
+  const [isTestingExternalProvider, setIsTestingExternalProvider] =
+    useState(false);
   const [isRunningDiscovery, setIsRunningDiscovery] = useState(false);
   const [isUploadingCsv, setIsUploadingCsv] = useState(false);
   const [isClearingResults, setIsClearingResults] = useState(false);
   const [candidateActionId, setCandidateActionId] = useState(null);
+
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
@@ -271,6 +278,26 @@ function DiscoverBondsPage() {
     }
   }
 
+  async function handleTestExternalProvider() {
+    setIsTestingExternalProvider(true);
+    setSuccessMessage("");
+    setErrorMessage("");
+
+    try {
+      const result = await testExternalDiscoveryProvider();
+
+      setExternalProviderTest(result);
+      setSuccessMessage("External provider test completed.");
+    } catch (error) {
+      setExternalProviderTest(null);
+      setErrorMessage(
+        getApiErrorMessage(error, "Could not test external provider.")
+      );
+    } finally {
+      setIsTestingExternalProvider(false);
+    }
+  }
+
   async function handleRunDiscovery() {
     setIsRunningDiscovery(true);
     setSuccessMessage("");
@@ -384,8 +411,11 @@ function DiscoverBondsPage() {
 
       <ProviderStatusSection
         providerStatus={providerStatus}
+        externalProviderTest={externalProviderTest}
         isLoading={isLoadingProviderStatus}
+        isTestingExternalProvider={isTestingExternalProvider}
         onRefresh={loadProviderStatus}
+        onTestExternalProvider={handleTestExternalProvider}
       />
 
       <div className="toolbar-card">
@@ -697,7 +727,14 @@ function DiscoverBondsPage() {
   );
 }
 
-function ProviderStatusSection({ providerStatus, isLoading, onRefresh }) {
+function ProviderStatusSection({
+  providerStatus,
+  externalProviderTest,
+  isLoading,
+  isTestingExternalProvider,
+  onRefresh,
+  onTestExternalProvider,
+}) {
   return (
     <div className="toolbar-card">
       <div className="section-header section-header-with-actions">
@@ -709,14 +746,27 @@ function ProviderStatusSection({ providerStatus, isLoading, onRefresh }) {
           </p>
         </div>
 
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={onRefresh}
-          disabled={isLoading}
-        >
-          {isLoading ? "Refreshing..." : "Refresh Status"}
-        </button>
+        <div className="table-action-buttons">
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={onRefresh}
+            disabled={isLoading}
+          >
+            {isLoading ? "Refreshing..." : "Refresh Status"}
+          </button>
+
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={onTestExternalProvider}
+            disabled={isTestingExternalProvider}
+          >
+            {isTestingExternalProvider
+              ? "Testing..."
+              : "Test External Provider"}
+          </button>
+        </div>
       </div>
 
       {!providerStatus ? (
@@ -737,6 +787,10 @@ function ProviderStatusSection({ providerStatus, isLoading, onRefresh }) {
             ))}
           </div>
         </>
+      )}
+
+      {externalProviderTest && (
+        <ExternalProviderTestResult result={externalProviderTest} />
       )}
     </div>
   );
@@ -774,6 +828,86 @@ function ProviderStatusCard({ provider }) {
           API Key:{" "}
           {configuration.external_api_key_configured ? "Configured" : "Not set"}
         </p>
+      )}
+    </div>
+  );
+}
+
+function ExternalProviderTestResult({ result }) {
+  return (
+    <div className="table-card nested-card">
+      <div className="section-header">
+        <div>
+          <h3>External Provider Test Result</h3>
+          <p>
+            This test loads and validates external provider data without saving
+            anything to the database.
+          </p>
+        </div>
+      </div>
+
+      <div className="summary-card-grid">
+        <DiscoveryRunCard title="Mode" value={result.mode} />
+        <DiscoveryRunCard
+          title="API Configured"
+          value={result.api_configured ? "Yes" : "No"}
+        />
+        <DiscoveryRunCard
+          title="Data Loaded"
+          value={result.data_loaded ? "Yes" : "No"}
+        />
+        <DiscoveryRunCard title="Loaded" value={result.loaded_count} />
+        <DiscoveryRunCard title="Valid" value={result.valid_count} />
+        <DiscoveryRunCard title="Invalid" value={result.invalid_count} />
+      </div>
+
+      {result.errors?.length > 0 && (
+        <div className="error-box">
+          <strong>Errors:</strong>
+          <ul>
+            {result.errors.map((error, index) => (
+              <li key={`${error}-${index}`}>{error}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {result.sample_candidates?.length > 0 && (
+        <div className="table-scroll">
+          <table className="wide-table">
+            <thead>
+              <tr>
+                <th>ISIN</th>
+                <th>Name</th>
+                <th>Issuer</th>
+                <th>Country</th>
+                <th>Currency</th>
+                <th>Rating</th>
+                <th>Maturity</th>
+                <th>Market Price</th>
+                <th>YTM</th>
+                <th>Duration</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {result.sample_candidates.map((candidate) => (
+                <tr key={candidate.isin}>
+                  <td>{candidate.isin}</td>
+                  <td>{candidate.name}</td>
+                  <td>{candidate.issuer}</td>
+                  <td>{candidate.country || "-"}</td>
+                  <td>{candidate.currency}</td>
+                  <td>{candidate.credit_rating}</td>
+                  <td>{candidate.maturity_date}</td>
+                  <td>{candidate.market_price || "-"}</td>
+                  <td>{candidate.ytm || "-"}</td>
+                  <td>{candidate.duration || "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

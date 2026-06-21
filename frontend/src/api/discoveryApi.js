@@ -124,3 +124,16 @@ export async function uploadDiscoveryCsv(file) {
 
   return response.data;
 }
+
+/**
+ * Test the external JSON/API provider without saving candidates.
+ *
+ * @returns {Promise<object>} External provider test report.
+ */
+export async function testExternalDiscoveryProvider() {
+  const response = await apiClient.get(
+    "/discover-bonds/test-external-provider/"
+  );
+
+  return response.data;
+}
