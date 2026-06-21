@@ -1,50 +1,34 @@
-[
-  {
-    "isin": "XXJSON000001",
-    "name": "JSON United States Treasury Note 4.125% 2031",
-    "issuer": "United States Treasury",
-    "country": "US",
-    "currency": "USD",
-    "coupon_rate": "4.125",
-    "maturity_date": "2031-05-31",
-    "credit_rating": "AA+",
-    "rating_source": "External JSON Sample",
-    "market_price": "100.2500",
-    "ytm": "4.0500",
-    "duration": "4.4000",
-    "source": "external_json_provider",
-    "source_url": ""
-  },
-  {
-    "isin": "XXJSON000002",
-    "name": "JSON Hellenic Republic Government Bond 3.875% 2028",
-    "issuer": "Hellenic Republic",
-    "country": "GR",
-    "currency": "EUR",
-    "coupon_rate": "3.875",
-    "maturity_date": "2028-06-15",
-    "credit_rating": "BBB-",
-    "rating_source": "External JSON Sample",
-    "market_price": "99.9000",
-    "ytm": "3.9000",
-    "duration": "2.1500",
-    "source": "external_json_provider",
-    "source_url": ""
-  },
-  {
-    "isin": "XXJSON000003",
-    "name": "JSON European Corporate Bond 4.500% 2030",
-    "issuer": "European Corporate Issuer",
-    "country": "DE",
-    "currency": "EUR",
-    "coupon_rate": "4.500",
-    "maturity_date": "2030-09-20",
-    "credit_rating": "A-",
-    "rating_source": "External JSON Sample",
-    "market_price": "98.8000",
-    "ytm": "4.7500",
-    "duration": "3.7500",
-    "source": "external_json_provider",
-    "source_url": ""
-  }
-]
+{
+  "results": [
+    {
+      "securityId": "XXMAP000001",
+      "bondName": "Mapped API Treasury Note 4.125% 2031",
+      "issuerName": "United States Treasury",
+      "issuerCountry": "US",
+      "ccy": "USD",
+      "coupon": "4.125",
+      "maturity": "2031-05-31",
+      "rating": "AA+",
+      "ratingAgency": "Mapped API Sample",
+      "price": "100.2500",
+      "yieldToMaturity": "4.0500",
+      "modifiedDuration": "4.4000",
+      "url": ""
+    },
+    {
+      "securityId": "XXMAP000002",
+      "bondName": "Mapped API Hellenic Republic Bond 3.875% 2028",
+      "issuerName": "Hellenic Republic",
+      "issuerCountry": "GR",
+      "ccy": "EUR",
+      "coupon": "3.875",
+      "maturity": "2028-06-15",
+      "rating": "BBB-",
+      "ratingAgency": "Mapped API Sample",
+      "price": "99.9000",
+      "yieldToMaturity": "3.9000",
+      "modifiedDuration": "2.1500",
+      "url": ""
+    }
+  ]
+}
