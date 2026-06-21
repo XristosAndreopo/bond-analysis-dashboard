@@ -10,11 +10,16 @@ This file exposes:
 - CSV upload endpoint
 - provider status endpoint
 - external provider test endpoint
+- AI research JSON import endpoints
 """
 
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
+from .ai_research.views import (
+    AIResearchDiscoveryImportAPIView,
+    AIResearchMarketImportAPIView,
+)
 from .discovery.provider_status_views import (
     DiscoveryExternalProviderTestAPIView,
     DiscoveryProviderStatusAPIView,
@@ -60,6 +65,16 @@ urlpatterns = [
         "discover-bonds/test-external-provider/",
         DiscoveryExternalProviderTestAPIView.as_view(),
         name="discovery-external-provider-test",
+    ),
+    path(
+        "ai-research/import-discovery/",
+        AIResearchDiscoveryImportAPIView.as_view(),
+        name="ai-research-import-discovery",
+    ),
+    path(
+        "ai-research/import-market/",
+        AIResearchMarketImportAPIView.as_view(),
+        name="ai-research-import-market",
     ),
     path("", include(router.urls)),
 ]
