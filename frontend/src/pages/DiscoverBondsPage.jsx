@@ -613,6 +613,12 @@ function DiscoverBondsPage() {
           </button>
         </div>
 
+        <div className="warning-box">
+          Η αξιολόγηση στο Discover Bonds είναι προκαταρκτική. Η τελική
+          αξιολόγηση θα γίνει με την προσθήκη στο Watchlist, αφού ληφθούν όλα
+          τα απαραίτητα στοιχεία.
+        </div>
+
         {isLoading ? (
           <div className="loading-text">Loading discovered bonds...</div>
         ) : (
@@ -633,7 +639,6 @@ function DiscoverBondsPage() {
                   <th>Duration</th>
                   <th>Preview Risk</th>
                   <th>Preview Signal</th>
-                  <th>Reasoning</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -641,7 +646,7 @@ function DiscoverBondsPage() {
               <tbody>
                 {candidates.length === 0 ? (
                   <tr>
-                    <td colSpan="15">
+                    <td colSpan="14">
                       No candidates are available. Adjust filters or press Run
                       Discovery.
                     </td>
@@ -683,13 +688,6 @@ function DiscoverBondsPage() {
                           signal={candidate.preview_signal}
                           label={candidate.preview_signal_label}
                         />
-                      </td>
-
-                      <td>
-                        {candidate.preview_reasoning ||
-                          candidate.ai_reasoning ||
-                          candidate.ai_summary ||
-                          "Passes backend discovery filters. Review issuer risk, liquidity, duration, yield and currency exposure."}
                       </td>
 
                       <td>

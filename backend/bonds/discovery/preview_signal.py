@@ -1,19 +1,11 @@
 """
-Preview signal logic for discovered bond candidates.
+Preliminary signal logic for discovered bond candidates.
 
-This module provides a lightweight, deterministic preview analysis for
+This module provides a lightweight, deterministic preliminary analysis for
 BondCandidate records before they are added to the user's Watchlist.
 
 Important:
-    This is not the full portfolio/watchlist analysis.
-
-Full analysis requires:
-    - UserBond
-    - latest BondMarketData
-    - cash flow calculations
-    - intrinsic value calculation
-    - risk score calculation
-    - final signal calculation
+    This is not the full Watchlist or Portfolio analysis.
 
 Discovery preview uses only candidate-level data:
     - credit rating
@@ -23,8 +15,8 @@ Discovery preview uses only candidate-level data:
     - currency
     - market price
 
-The goal is to help the user prioritize candidates before adding them to
-Watchlist. It is educational/analytical only and not investment advice.
+The final analytical signal is produced only after the candidate is added to
+Watchlist or Portfolio.
 """
 
 from dataclasses import dataclass
@@ -36,14 +28,7 @@ from bonds.discovery.rating_utils import RatingError, get_rating_score
 @dataclass(frozen=True)
 class CandidatePreview:
     """
-    Preview result for a discovered bond candidate.
-
-    Attributes:
-        preview_risk_level: Risk level code compatible with RiskBadge.
-        preview_risk_label: Human-readable risk label.
-        preview_signal: Signal code compatible with SignalBadge CSS.
-        preview_signal_label: Human-readable signal label.
-        preview_reasoning: Short explanation shown in the UI.
+    Preliminary preview result for a discovered bond candidate.
     """
 
     preview_risk_level: str
@@ -54,83 +39,40 @@ class CandidatePreview:
 
 
 RISK_LABELS = {
-    "VERY_LOW": "Πολύ χαμηλό",
-    "LOW": "Χαμηλό",
-    "MEDIUM": "Μεσαίο",
-    "HIGH": "Υψηλό",
-    "VERY_HIGH": "Πολύ υψηλό",
+    "VERY_LOW": "Προκαταρκτικό: Πολύ χαμηλό",
+    "LOW": "Προκαταρκτικό: Χαμηλό",
+    "MEDIUM": "Προκαταρκτικό: Μεσαίο",
+    "HIGH": "Προκαταρκτικό: Υψηλό",
+    "VERY_HIGH": "Προκαταρκτικό: Πολύ υψηλό",
 }
 
 SIGNAL_LABELS = {
-    "BUY": "Υποψήφιο για αγορά",
-    "BUY_WITH_CAUTION": "Αγορά με προσοχή",
-    "DO_NOT_BUY_WAIT": "Περίμενε / Έλεγξε",
-    "REVIEW": "Χρειάζεται έλεγχο",
+    "BUY": "Προκαταρκτικά υποψήφιο για αγορά",
+    "BUY_WITH_CAUTION": "Προκαταρκτικά υποψήφιο με προσοχή",
+    "DO_NOT_BUY_WAIT": "Προκαταρκτικά περίμενε / έλεγξε",
+    "REVIEW": "Προκαταρκτικά χρειάζεται έλεγχο",
 }
 
 
 def evaluate_candidate_preview(candidate):
     """
-    Evaluate a BondCandidate and return a deterministic preview signal.
+    Evaluate a BondCandidate and return a deterministic preliminary signal.
 
     Args:
         candidate: BondCandidate instance.
 
     Returns:
         CandidatePreview instance.
-
-    Notes:
-        This function does not write to the database.
-        It does not replace the full analytics engine.
     """
     rating_score = safe_rating_score(candidate.credit_rating)
     duration = safe_decimal(candidate.duration)
     ytm = safe_decimal(candidate.ytm)
 
     risk_points = 0
-    reasoning_parts = []
 
-    rating_points = calculate_rating_points(rating_score)
-    risk_points += rating_points
-
-    if rating_score is None:
-        reasoning_parts.append("Δεν υπάρχει έγκυρη πιστοληπτική αξιολόγηση.")
-    elif rating_score >= 85:
-        reasoning_parts.append("Πολύ ισχυρό rating.")
-    elif rating_score >= 70:
-        reasoning_parts.append("Καλό investment-grade rating.")
-    elif rating_score >= 55:
-        reasoning_parts.append("Οριακό investment-grade rating, θέλει προσοχή.")
-    else:
-        reasoning_parts.append("Χαμηλό rating για το ζητούμενο προφίλ.")
-
-    duration_points = calculate_duration_points(duration)
-    risk_points += duration_points
-
-    if duration is None:
-        reasoning_parts.append("Δεν υπάρχει διαθέσιμο duration.")
-    elif duration <= Decimal("4.00"):
-        reasoning_parts.append("Χαμηλό έως μέτριο duration.")
-    elif duration <= Decimal("7.00"):
-        reasoning_parts.append("Μέτριο duration.")
-    elif duration <= Decimal("10.00"):
-        reasoning_parts.append("Υψηλό duration, αυξημένη ευαισθησία σε επιτόκια.")
-    else:
-        reasoning_parts.append("Πολύ υψηλό duration, σημαντικός επιτοκιακός κίνδυνος.")
-
-    ytm_points = calculate_ytm_points(ytm)
-    risk_points += ytm_points
-
-    if ytm is None:
-        reasoning_parts.append("Δεν υπάρχει διαθέσιμο YTM.")
-    elif ytm < Decimal("2.00"):
-        reasoning_parts.append("Χαμηλό YTM σε σχέση με τον κίνδυνο.")
-    elif ytm <= Decimal("6.00"):
-        reasoning_parts.append("Αποδεκτό YTM για προκαταρκτική αξιολόγηση.")
-    elif ytm <= Decimal("8.00"):
-        reasoning_parts.append("Υψηλό YTM, χρειάζεται έλεγχος κινδύνου.")
-    else:
-        reasoning_parts.append("Πολύ υψηλό YTM, πιθανή ένδειξη αυξημένου κινδύνου.")
+    risk_points += calculate_rating_points(rating_score)
+    risk_points += calculate_duration_points(duration)
+    risk_points += calculate_ytm_points(ytm)
 
     preview_risk_level = calculate_risk_level(risk_points)
     preview_signal = calculate_preview_signal(
@@ -142,22 +84,50 @@ def evaluate_candidate_preview(candidate):
 
     return CandidatePreview(
         preview_risk_level=preview_risk_level,
-        preview_risk_label=RISK_LABELS.get(preview_risk_level, preview_risk_level),
+        preview_risk_label=RISK_LABELS.get(
+            preview_risk_level,
+            preview_risk_level,
+        ),
         preview_signal=preview_signal,
-        preview_signal_label=SIGNAL_LABELS.get(preview_signal, preview_signal),
-        preview_reasoning=" ".join(reasoning_parts),
+        preview_signal_label=SIGNAL_LABELS.get(
+            preview_signal,
+            preview_signal,
+        ),
+        preview_reasoning=build_short_reasoning(
+            candidate=candidate,
+            duration=duration,
+            ytm=ytm,
+        ),
+    )
+
+
+def build_short_reasoning(candidate, duration, ytm):
+    """
+    Build a short reasoning text for Discover Bonds.
+
+    Args:
+        candidate: BondCandidate instance.
+        duration: Candidate duration.
+        ytm: Candidate YTM.
+
+    Returns:
+        str: Short reasoning text.
+    """
+    rating_text = candidate.credit_rating or "χωρίς rating"
+    ytm_text = f"{ytm}%" if ytm is not None else "χωρίς διαθέσιμο YTM"
+    duration_text = (
+        f"{duration}" if duration is not None else "χωρίς διαθέσιμο duration"
+    )
+
+    return (
+        "Προκαταρκτική ένδειξη με βάση τα διαθέσιμα στοιχεία: "
+        f"rating {rating_text}, YTM {ytm_text}, duration {duration_text}."
     )
 
 
 def safe_decimal(value):
     """
     Convert a value to Decimal safely.
-
-    Args:
-        value: Any decimal-like value.
-
-    Returns:
-        Decimal or None.
     """
     if value is None:
         return None
@@ -171,12 +141,6 @@ def safe_decimal(value):
 def safe_rating_score(rating):
     """
     Convert a rating to a numeric score safely.
-
-    Args:
-        rating: Credit rating text.
-
-    Returns:
-        Integer score or None.
     """
     if not rating:
         return None
@@ -189,7 +153,7 @@ def safe_rating_score(rating):
 
 def calculate_rating_points(rating_score):
     """
-    Calculate risk points from credit rating.
+    Calculate preliminary risk points from credit rating.
 
     Lower points are better.
     """
@@ -210,9 +174,7 @@ def calculate_rating_points(rating_score):
 
 def calculate_duration_points(duration):
     """
-    Calculate risk points from duration.
-
-    Lower duration usually means lower interest-rate sensitivity.
+    Calculate preliminary risk points from duration.
     """
     if duration is None:
         return 1
@@ -231,10 +193,7 @@ def calculate_duration_points(duration):
 
 def calculate_ytm_points(ytm):
     """
-    Calculate risk points from YTM.
-
-    Extremely low YTM may not compensate risk.
-    Extremely high YTM can indicate elevated market risk.
+    Calculate preliminary risk points from YTM.
     """
     if ytm is None:
         return 1
@@ -253,7 +212,7 @@ def calculate_ytm_points(ytm):
 
 def calculate_risk_level(risk_points):
     """
-    Convert risk points to a RiskBadge-compatible risk level.
+    Convert preliminary risk points to a RiskBadge-compatible risk level.
     """
     if risk_points <= 1:
         return "LOW"
@@ -269,19 +228,14 @@ def calculate_risk_level(risk_points):
 
 def calculate_preview_signal(rating_score, duration, ytm, preview_risk_level):
     """
-    Convert preview inputs to a SignalBadge-compatible signal.
-
-    Returns:
-        BUY, BUY_WITH_CAUTION, DO_NOT_BUY_WAIT, or REVIEW.
+    Convert preliminary inputs to a SignalBadge-compatible signal.
     """
     if rating_score is None or ytm is None:
         return "REVIEW"
 
     has_good_rating = rating_score >= 70
     has_investment_grade_rating = rating_score >= 55
-    has_reasonable_duration = (
-        duration is None or duration <= Decimal("7.00")
-    )
+    has_reasonable_duration = duration is None or duration <= Decimal("7.00")
     has_acceptable_yield = Decimal("2.00") <= ytm <= Decimal("6.00")
 
     if (
