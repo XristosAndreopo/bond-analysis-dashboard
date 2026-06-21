@@ -8,6 +8,7 @@
  * - lets the user test the external JSON/API provider safely
  * - lets the user download a CSV template
  * - lets the user upload a CSV bond universe
+ * - lets the user import AI-researched JSON
  * - lets the user choose discovery filters
  * - asks the backend to run discovery
  * - displays validated candidates
@@ -18,6 +19,7 @@
  * The backend remains responsible for:
  * - provider data loading
  * - CSV validation
+ * - AI research JSON validation/import
  * - external JSON/API mapping
  * - rating filtering
  * - maturity filtering
@@ -35,6 +37,7 @@ import {
   fetchDiscoveredBonds,
   fetchDiscoveryProviderStatus,
   ignoreDiscoveredBond,
+  importAIResearchDiscoveryJson,
   runBondDiscovery,
   testExternalDiscoveryProvider,
   uploadDiscoveryCsv,
@@ -146,9 +149,11 @@ const CSV_TEMPLATE_ROWS = [
 function DiscoverBondsPage() {
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [selectedCsvFile, setSelectedCsvFile] = useState(null);
+  const [aiResearchJsonText, setAIResearchJsonText] = useState("");
   const [candidates, setCandidates] = useState([]);
   const [lastDiscoveryRun, setLastDiscoveryRun] = useState(null);
   const [lastCsvUpload, setLastCsvUpload] = useState(null);
+  const [lastAIResearchImport, setLastAIResearchImport] = useState(null);
   const [providerStatus, setProviderStatus] = useState(null);
   const [externalProviderTest, setExternalProviderTest] = useState(null);
 
@@ -158,6 +163,8 @@ function DiscoverBondsPage() {
     useState(false);
   const [isRunningDiscovery, setIsRunningDiscovery] = useState(false);
   const [isUploadingCsv, setIsUploadingCsv] = useState(false);
+  const [isImportingAIResearchJson, setIsImportingAIResearchJson] =
+    useState(false);
   const [isClearingResults, setIsClearingResults] = useState(false);
   const [candidateActionId, setCandidateActionId] = useState(null);
 
@@ -223,6 +230,20 @@ function DiscoverBondsPage() {
     setErrorMessage("");
   }
 
+  function handleAIResearchJsonChange(event) {
+    setAIResearchJsonText(event.target.value);
+    setLastAIResearchImport(null);
+    setSuccessMessage("");
+    setErrorMessage("");
+  }
+
+  function handleClearAIResearchJson() {
+    setAIResearchJsonText("");
+    setLastAIResearchImport(null);
+    setSuccessMessage("");
+    setErrorMessage("");
+  }
+
   function handleDownloadCsvTemplate() {
     const csvContent = buildCsvTemplateContent();
     const blob = new Blob([csvContent], {
@@ -275,6 +296,63 @@ function DiscoverBondsPage() {
       setErrorMessage(getApiErrorMessage(error, "Could not upload CSV file."));
     } finally {
       setIsUploadingCsv(false);
+    }
+  }
+
+  async function handleImportAIResearchJson() {
+    if (!aiResearchJsonText.trim()) {
+      setErrorMessage("Please paste AI Research JSON first.");
+      return;
+    }
+
+    let parsedPayload = null;
+
+    try {
+      parsedPayload = JSON.parse(aiResearchJsonText);
+    } catch (error) {
+      setErrorMessage("Invalid JSON. Please check the pasted AI Research output.");
+      return;
+    }
+
+    if (!parsedPayload || Array.isArray(parsedPayload)) {
+      setErrorMessage("AI Research JSON must be a JSON object.");
+      return;
+    }
+
+    setIsImportingAIResearchJson(true);
+    setSuccessMessage("");
+    setErrorMessage("");
+
+    try {
+      const result = await importAIResearchDiscoveryJson(parsedPayload);
+      const importSummary = result.import_summary || null;
+
+      setLastAIResearchImport(importSummary);
+
+      if (importSummary?.discovery_run_id) {
+        setLastDiscoveryRun({
+          id: importSummary.discovery_run_id,
+          total_found: importSummary.total_found,
+          total_saved:
+            Number(importSummary.total_created || 0) +
+            Number(importSummary.total_updated || 0),
+          total_skipped: importSummary.total_skipped,
+          status: "COMPLETED",
+          status_label: "Completed",
+        });
+
+        await loadCandidates(importSummary.discovery_run_id);
+      } else {
+        await loadCandidates();
+      }
+
+      setSuccessMessage("AI Research JSON imported successfully.");
+    } catch (error) {
+      setErrorMessage(
+        getApiErrorMessage(error, "Could not import AI Research JSON.")
+      );
+    } finally {
+      setIsImportingAIResearchJson(false);
     }
   }
 
@@ -391,8 +469,9 @@ function DiscoverBondsPage() {
         <div>
           <h1>Discover Bonds</h1>
           <p>
-            Find validated bond candidates from backend providers and add them
-            to your Watchlist for further analysis.
+            Find validated bond candidates from backend providers, CSV imports
+            or AI Research JSON and add them to your Watchlist for further
+            analysis.
           </p>
         </div>
 
@@ -473,6 +552,86 @@ function DiscoverBondsPage() {
             Uploaded rows: {lastCsvUpload.row_count}. Stored as CSV Provider
             universe.
           </p>
+        )}
+      </div>
+
+      <div className="toolbar-card">
+        <div className="section-header">
+          <div>
+            <h2>Import AI Research JSON</h2>
+            <p>
+              Paste structured JSON produced by the AI Research Agent. The
+              backend validates it and imports candidates as AI-researched data.
+            </p>
+          </div>
+        </div>
+
+        <div className="warning-box">
+          Τα δεδομένα που εισάγονται εδώ είναι AI-researched data και όχι
+          επίσημο live market feed. Κάθε εγγραφή πρέπει να έχει πηγή,
+          source URL, timestamp, confidence και review status.
+        </div>
+
+        <label>
+          AI Research JSON
+          <textarea
+            value={aiResearchJsonText}
+            onChange={handleAIResearchJsonChange}
+            rows="12"
+            placeholder='Paste DiscoveryResearchResult JSON here. Example: {"research_type":"DISCOVERY", ...}'
+          />
+        </label>
+
+        <div className="form-actions">
+          <button
+            type="button"
+            className="primary-button"
+            onClick={handleImportAIResearchJson}
+            disabled={isImportingAIResearchJson || !aiResearchJsonText.trim()}
+          >
+            {isImportingAIResearchJson ? "Importing..." : "Import AI JSON"}
+          </button>
+
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={handleClearAIResearchJson}
+            disabled={isImportingAIResearchJson || !aiResearchJsonText.trim()}
+          >
+            Clear JSON
+          </button>
+        </div>
+
+        {lastAIResearchImport && (
+          <div className="summary-card-grid">
+            <DiscoveryRunCard
+              title="Found"
+              value={lastAIResearchImport.total_found}
+            />
+            <DiscoveryRunCard
+              title="Created"
+              value={lastAIResearchImport.total_created}
+            />
+            <DiscoveryRunCard
+              title="Updated"
+              value={lastAIResearchImport.total_updated}
+            />
+            <DiscoveryRunCard
+              title="Skipped"
+              value={lastAIResearchImport.total_skipped}
+            />
+          </div>
+        )}
+
+        {lastAIResearchImport?.errors?.length > 0 && (
+          <div className="error-box">
+            <strong>Import errors:</strong>
+            <ul>
+              {lastAIResearchImport.errors.map((error, index) => (
+                <li key={`${error}-${index}`}>{error}</li>
+              ))}
+            </ul>
+          </div>
         )}
       </div>
 
@@ -637,6 +796,9 @@ function DiscoverBondsPage() {
                   <th>Market Price</th>
                   <th>YTM</th>
                   <th>Duration</th>
+                  <th>Source</th>
+                  <th>Confidence</th>
+                  <th>Review</th>
                   <th>Preview Risk</th>
                   <th>Preview Signal</th>
                   <th>Actions</th>
@@ -646,9 +808,9 @@ function DiscoverBondsPage() {
               <tbody>
                 {candidates.length === 0 ? (
                   <tr>
-                    <td colSpan="14">
-                      No candidates are available. Adjust filters or press Run
-                      Discovery.
+                    <td colSpan="17">
+                      No candidates are available. Adjust filters, import AI
+                      JSON, upload CSV or press Run Discovery.
                     </td>
                   </tr>
                 ) : (
@@ -675,6 +837,22 @@ function DiscoverBondsPage() {
 
                       <td>{formatPercent(candidate.ytm, 2)}</td>
                       <td>{formatDecimal(candidate.duration, 4)}</td>
+
+                      <td>
+                        <CandidateSource candidate={candidate} />
+                      </td>
+
+                      <td>
+                        {candidate.confidence_label ||
+                          candidate.confidence ||
+                          "-"}
+                      </td>
+
+                      <td>
+                        {candidate.review_status_label ||
+                          candidate.review_status ||
+                          "-"}
+                      </td>
 
                       <td>
                         <RiskBadge
@@ -908,6 +1086,34 @@ function ExternalProviderTestResult({ result }) {
         </div>
       )}
     </div>
+  );
+}
+
+function CandidateSource({ candidate }) {
+  const dataOrigin =
+    candidate.data_origin_label || candidate.data_origin || candidate.source;
+
+  if (!candidate.source_url) {
+    return (
+      <>
+        <div>{candidate.source || "-"}</div>
+        <small>{dataOrigin || "-"}</small>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <a
+        href={candidate.source_url}
+        target="_blank"
+        rel="noreferrer"
+      >
+        {candidate.source || "Open source"}
+      </a>
+      <br />
+      <small>{dataOrigin || "-"}</small>
+    </>
   );
 }
 
