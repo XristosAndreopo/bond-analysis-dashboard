@@ -11,6 +11,7 @@
  * - excluding existing Watchlist/Portfolio bonds
  * - adding candidates to the user's Watchlist
  * - ignoring candidates
+ * - clearing currently visible discovery results
  * - validating and storing uploaded CSV files
  *
  * The frontend only displays results and sends user actions.
@@ -23,14 +24,6 @@ import apiClient from "./apiClient";
  *
  * Optional params:
  * - discovery_run_id: limits results to one DiscoveryRun.
- *
- * The backend returns only candidates that:
- * - belong to the logged-in user
- * - have status NEW or REVIEWED
- * - are not already active in Watchlist
- * - are not already active in Portfolio
- * - are not ignored
- * - are not already added to Watchlist
  *
  * @param {object} params - Optional query parameters.
  * @returns {Promise<Array>} Visible bond candidates.
@@ -50,14 +43,6 @@ export async function fetchDiscoveredBonds(params = {}) {
  * - static_provider
  * - csv_provider
  *
- * Example payload:
- * {
- *   source: "csv_provider",
- *   min_rating: "BBB-",
- *   currencies: ["EUR"],
- *   countries: ["GR"]
- * }
- *
  * @param {object} payload - Optional discovery filters.
  * @returns {Promise<object>} Discovery run result and visible candidates.
  */
@@ -68,13 +53,29 @@ export async function runBondDiscovery(payload = {}) {
 }
 
 /**
- * Add a discovered candidate to the user's Watchlist.
+ * Clear currently visible discovery results.
  *
- * The backend will:
- * - create the Bond master record if needed
- * - create market data if candidate market data exists
- * - create or reactivate a WATCHLIST UserBond
- * - mark the candidate as ADDED_TO_WATCHLIST
+ * This marks visible candidates as IGNORED.
+ * It does not delete records and does not affect Watchlist or Portfolio items.
+ *
+ * @param {number|string|null} discoveryRunId - Optional DiscoveryRun id.
+ * @returns {Promise<object>} Clear result.
+ */
+export async function clearCurrentDiscoveryResults(discoveryRunId = null) {
+  const payload = discoveryRunId
+    ? { discovery_run_id: discoveryRunId }
+    : {};
+
+  const response = await apiClient.post(
+    "/discover-bonds/clear-current/",
+    payload
+  );
+
+  return response.data;
+}
+
+/**
+ * Add a discovered candidate to the user's Watchlist.
  *
  * @param {number|string} candidateId - BondCandidate id.
  * @returns {Promise<object>} Add-to-watchlist result.
@@ -90,9 +91,6 @@ export async function addDiscoveredBondToWatchlist(candidateId) {
 /**
  * Ignore a discovered candidate.
  *
- * Ignored candidates disappear from the Discover Bonds page and should not be
- * shown again in future discovery runs.
- *
  * @param {number|string} candidateId - BondCandidate id.
  * @returns {Promise<object>} Ignore result.
  */
@@ -106,12 +104,6 @@ export async function ignoreDiscoveredBond(candidateId) {
 
 /**
  * Upload a CSV bond universe file.
- *
- * The backend validates the file before replacing the existing CSV universe.
- * The old CSV remains unchanged if validation fails.
- *
- * Expected multipart field name:
- * - file
  *
  * @param {File} file - CSV file selected by the user.
  * @returns {Promise<object>} Upload summary.

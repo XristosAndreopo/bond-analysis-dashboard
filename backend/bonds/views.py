@@ -19,6 +19,7 @@ Discovery endpoints are user-specific:
 """
 
 from django.db.models import Q
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.mixins import ListModelMixin
@@ -324,6 +325,7 @@ class BondCandidateDiscoveryViewSet(ListModelMixin, GenericViewSet):
     Main endpoints:
         GET  /api/discover-bonds/
         POST /api/discover-bonds/run/
+        POST /api/discover-bonds/clear-current/
         POST /api/discover-bonds/<id>/add-to-watchlist/
         POST /api/discover-bonds/<id>/ignore/
 
@@ -427,6 +429,65 @@ class BondCandidateDiscoveryViewSet(ListModelMixin, GenericViewSet):
                     visible_candidates,
                     many=True,
                 ).data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=False, methods=["post"], url_path="clear-current")
+    def clear_current(self, request):
+        """
+        Clear currently visible discovery results.
+
+        This does not delete records from the database.
+        It marks visible candidates as IGNORED.
+
+        Request payload:
+            {
+                "discovery_run_id": 12
+            }
+
+        If discovery_run_id is provided, only visible candidates from that run
+        are ignored.
+
+        If discovery_run_id is omitted, all currently visible candidates for the
+        authenticated user are ignored.
+
+        This action does not affect:
+        - Portfolio items
+        - Watchlist items
+        - candidates already added to Watchlist
+        """
+        discovery_run_id = request.data.get(
+            "discovery_run_id",
+        ) or request.query_params.get(
+            "discovery_run_id",
+        )
+
+        queryset = get_visible_candidates(user=request.user)
+
+        if discovery_run_id:
+            discovery_run_id_as_text = str(discovery_run_id)
+
+            if not discovery_run_id_as_text.isdigit():
+                return Response(
+                    {"detail": "discovery_run_id must be a valid integer."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            queryset = queryset.filter(
+                discovery_run_id=int(discovery_run_id_as_text),
+                discovery_run__user=request.user,
+            )
+
+        ignored_count = queryset.update(
+            status=BondCandidate.Status.IGNORED,
+            updated_at=timezone.now(),
+        )
+
+        return Response(
+            {
+                "detail": "Current discovery results cleared.",
+                "ignored_count": ignored_count,
             },
             status=status.HTTP_200_OK,
         )

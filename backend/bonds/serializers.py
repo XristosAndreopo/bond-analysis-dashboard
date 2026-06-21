@@ -16,6 +16,10 @@ are calculated dynamically and are not stored in the database.
 from rest_framework import serializers
 
 from bonds.discovery.preview_signal import evaluate_candidate_preview
+from bonds.discovery.providers.provider_registry import (
+    DEFAULT_DISCOVERY_SOURCE,
+    get_supported_provider_names,
+)
 from bonds.discovery.rating_utils import (
     INVESTMENT_GRADE_MIN_RATING,
     RatingError,
@@ -363,7 +367,7 @@ class RunBondDiscoverySerializer(serializers.Serializer):
 
     Expected payload:
         {
-            "source": "static_provider",
+            "source": "csv_provider",
             "min_rating": "BBB-",
             "currencies": ["EUR", "USD"],
             "countries": ["GR", "US"]
@@ -374,7 +378,7 @@ class RunBondDiscoverySerializer(serializers.Serializer):
 
     source = serializers.CharField(
         required=False,
-        default="static_provider",
+        default=DEFAULT_DISCOVERY_SOURCE,
     )
     min_rating = serializers.CharField(
         required=False,
@@ -397,16 +401,10 @@ class RunBondDiscoverySerializer(serializers.Serializer):
         """
         Validate discovery source.
 
-        Supported MVP sources:
-        - static_provider
-        - csv_provider
+        Supported sources are defined in the provider registry.
         """
         normalized_value = value.strip().lower()
-
-        supported_sources = [
-            "static_provider",
-            "csv_provider",
-        ]
+        supported_sources = get_supported_provider_names()
 
         if normalized_value not in supported_sources:
             supported_text = ", ".join(supported_sources)
@@ -415,9 +413,7 @@ class RunBondDiscoverySerializer(serializers.Serializer):
                 f"Supported discovery sources: {supported_text}."
             )
 
-        return normalized_value    
-
-
+        return normalized_value
 
     def validate_min_rating(self, value):
         """

@@ -10,11 +10,8 @@
  * - asks the backend to run discovery
  * - displays validated candidates
  * - displays backend-calculated preview risk/signal
+ * - clears current visible results when requested
  * - sends Add to Watchlist or Ignore actions
- *
- * The backend remains responsible for provider data, CSV validation, rating
- * filtering, maturity filtering, duplicate checks, user ownership rules,
- * and preview signal calculation.
  */
 
 import { useEffect, useState } from "react";
@@ -22,6 +19,7 @@ import { Link } from "react-router-dom";
 
 import {
   addDiscoveredBondToWatchlist,
+  clearCurrentDiscoveryResults,
   fetchDiscoveredBonds,
   ignoreDiscoveredBond,
   runBondDiscovery,
@@ -38,6 +36,7 @@ import {
 const SOURCE_OPTIONS = [
   { value: "static_provider", label: "Static Provider" },
   { value: "csv_provider", label: "CSV Provider" },
+  { value: "external_json_provider", label: "External JSON Provider" },
 ];
 
 const MINIMUM_RATING_OPTIONS = [
@@ -139,6 +138,7 @@ function DiscoverBondsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRunningDiscovery, setIsRunningDiscovery] = useState(false);
   const [isUploadingCsv, setIsUploadingCsv] = useState(false);
+  const [isClearingResults, setIsClearingResults] = useState(false);
   const [candidateActionId, setCandidateActionId] = useState(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
@@ -259,6 +259,34 @@ function DiscoverBondsPage() {
       );
     } finally {
       setIsRunningDiscovery(false);
+    }
+  }
+
+  async function handleClearCurrentResults() {
+    if (candidates.length === 0) {
+      setErrorMessage("There are no current discovery results to clear.");
+      return;
+    }
+
+    setIsClearingResults(true);
+    setSuccessMessage("");
+    setErrorMessage("");
+
+    try {
+      const result = await clearCurrentDiscoveryResults(
+        lastDiscoveryRun?.id || null
+      );
+
+      setCandidates([]);
+      setSuccessMessage(
+        `Current results cleared. Ignored candidates: ${result.ignored_count}.`
+      );
+    } catch (error) {
+      setErrorMessage(
+        getApiErrorMessage(error, "Could not clear current results.")
+      );
+    } finally {
+      setIsClearingResults(false);
     }
   }
 
@@ -504,6 +532,19 @@ function DiscoverBondsPage() {
               your Portfolio or Watchlist.
             </p>
           </div>
+
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={handleClearCurrentResults}
+            disabled={
+              isClearingResults ||
+              isRunningDiscovery ||
+              candidates.length === 0
+            }
+          >
+            {isClearingResults ? "Clearing..." : "Clear Current Results"}
+          </button>
         </div>
 
         {isLoading ? (
@@ -543,19 +584,12 @@ function DiscoverBondsPage() {
                   candidates.map((candidate) => (
                     <tr key={candidate.id}>
                       <td>{candidate.name}</td>
-
                       <td>{candidate.isin}</td>
-
                       <td>{candidate.country || "-"}</td>
-
                       <td>{candidate.issuer}</td>
-
                       <td>{candidate.currency}</td>
-
                       <td>{candidate.credit_rating}</td>
-
                       <td>{candidate.maturity_date}</td>
-
                       <td>{formatPercent(candidate.coupon_rate, 3)}</td>
 
                       <td>
@@ -569,7 +603,6 @@ function DiscoverBondsPage() {
                       </td>
 
                       <td>{formatPercent(candidate.ytm, 2)}</td>
-
                       <td>{formatDecimal(candidate.duration, 4)}</td>
 
                       <td>

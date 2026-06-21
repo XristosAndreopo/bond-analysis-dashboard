@@ -11,9 +11,8 @@ The service is intentionally backend-driven:
 - this service creates BondCandidate records
 - this service converts candidates into Watchlist UserBond records
 
-Supported MVP providers:
-- static_provider: hardcoded demo candidates
-- csv_provider: candidates loaded from local CSV file
+Supported providers are managed by:
+    bonds.discovery.providers.provider_registry
 
 The frontend must not invent candidate data. It only displays backend results.
 """
@@ -24,7 +23,11 @@ from decimal import Decimal, InvalidOperation
 from django.db import transaction
 from django.utils import timezone
 
-from bonds.discovery.providers import csv_provider, static_provider
+from bonds.discovery.providers.provider_registry import (
+    DEFAULT_DISCOVERY_SOURCE,
+    ProviderRegistryError,
+    get_provider,
+)
 from bonds.discovery.rating_utils import (
     INVESTMENT_GRADE_MIN_RATING,
     RatingError,
@@ -33,14 +36,6 @@ from bonds.discovery.rating_utils import (
 )
 from bonds.models import Bond, BondCandidate, BondMarketData, DiscoveryRun
 from portfolios.models import UserBond
-
-
-DEFAULT_DISCOVERY_SOURCE = "static_provider"
-
-SUPPORTED_PROVIDERS = {
-    "static_provider": static_provider,
-    "csv_provider": csv_provider,
-}
 
 
 class DiscoveryServiceError(Exception):
@@ -203,33 +198,6 @@ def normalize_string_list(values):
     return normalized_values
 
 
-def get_provider(source):
-    """
-    Return provider module by source name.
-
-    Args:
-        source: Provider source name.
-
-    Returns:
-        Provider module.
-
-    Raises:
-        DiscoveryServiceError: If provider is unsupported.
-    """
-    normalized_source = normalize_text(source).lower() or DEFAULT_DISCOVERY_SOURCE
-    provider = SUPPORTED_PROVIDERS.get(normalized_source)
-
-    if provider is None:
-        supported_sources = ", ".join(sorted(SUPPORTED_PROVIDERS.keys()))
-
-        raise DiscoveryServiceError(
-            f"Unsupported discovery source '{source}'. "
-            f"Supported sources: {supported_sources}."
-        )
-
-    return provider
-
-
 def normalize_raw_candidate(raw_candidate):
     """
     Normalize and validate one raw candidate dictionary.
@@ -239,6 +207,9 @@ def normalize_raw_candidate(raw_candidate):
 
     Returns:
         dict: Normalized candidate data.
+
+    Raises:
+        CandidateValidationError: If required data is missing or invalid.
     """
     isin = normalize_isin(raw_candidate.get("isin"))
 
@@ -289,7 +260,10 @@ def normalize_raw_candidate(raw_candidate):
             raw_candidate.get("market_price"),
             field_name="market_price",
         ),
-        "ytm": parse_decimal(raw_candidate.get("ytm"), field_name="ytm"),
+        "ytm": parse_decimal(
+            raw_candidate.get("ytm"),
+            field_name="ytm",
+        ),
         "duration": parse_decimal(
             raw_candidate.get("duration"),
             field_name="duration",
@@ -427,12 +401,15 @@ def run_bond_discovery(
         countries: Optional list of allowed countries.
 
     Returns:
-        DiscoveryRun: Completed or failed discovery run.
+        DiscoveryRun: Completed discovery run.
 
     Raises:
         DiscoveryServiceError: If discovery cannot run.
     """
-    provider = get_provider(source)
+    try:
+        provider = get_provider(source)
+    except ProviderRegistryError as exc:
+        raise DiscoveryServiceError(str(exc)) from exc
 
     try:
         normalized_min_rating = normalize_rating(min_rating)
@@ -492,7 +469,10 @@ def run_bond_discovery(
                 total_skipped += 1
                 continue
 
-            if candidate_is_active_for_user(user=user, isin=candidate["isin"]):
+            if candidate_is_active_for_user(
+                user=user,
+                isin=candidate["isin"],
+            ):
                 total_skipped += 1
                 continue
 
@@ -654,7 +634,10 @@ def add_candidate_to_watchlist(user, candidate_id):
     Raises:
         DiscoveryServiceError: If the candidate cannot be added.
     """
-    candidate = get_candidate_for_user(user=user, candidate_id=candidate_id)
+    candidate = get_candidate_for_user(
+        user=user,
+        candidate_id=candidate_id,
+    )
 
     if candidate.status == BondCandidate.Status.IGNORED:
         raise DiscoveryServiceError("Ignored candidates cannot be added.")
@@ -673,7 +656,10 @@ def add_candidate_to_watchlist(user, candidate_id):
             "This bond already exists in your Portfolio."
         )
 
-    create_or_update_market_data_from_candidate(candidate=candidate, bond=bond)
+    create_or_update_market_data_from_candidate(
+        candidate=candidate,
+        bond=bond,
+    )
 
     watchlist_item, created = UserBond.objects.get_or_create(
         user=user,
@@ -689,10 +675,20 @@ def add_candidate_to_watchlist(user, candidate_id):
 
     if not created and not watchlist_item.is_active:
         watchlist_item.is_active = True
-        watchlist_item.save(update_fields=["is_active", "updated_at"])
+        watchlist_item.save(
+            update_fields=[
+                "is_active",
+                "updated_at",
+            ],
+        )
 
     candidate.status = BondCandidate.Status.ADDED_TO_WATCHLIST
-    candidate.save(update_fields=["status", "updated_at"])
+    candidate.save(
+        update_fields=[
+            "status",
+            "updated_at",
+        ],
+    )
 
     return watchlist_item
 
@@ -709,8 +705,16 @@ def ignore_candidate(user, candidate_id):
     Returns:
         BondCandidate instance.
     """
-    candidate = get_candidate_for_user(user=user, candidate_id=candidate_id)
+    candidate = get_candidate_for_user(
+        user=user,
+        candidate_id=candidate_id,
+    )
     candidate.status = BondCandidate.Status.IGNORED
-    candidate.save(update_fields=["status", "updated_at"])
+    candidate.save(
+        update_fields=[
+            "status",
+            "updated_at",
+        ],
+    )
 
     return candidate
