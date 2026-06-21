@@ -2,22 +2,21 @@
  * API functions for the Watchlist Discovery Engine.
  *
  * This file contains all frontend requests related to discovered bond
- * candidates and CSV bond universe uploads.
- *
- * The backend remains responsible for:
- * - running discovery
- * - validating provider data
- * - filtering by rating and maturity
- * - excluding existing Watchlist/Portfolio bonds
- * - adding candidates to the user's Watchlist
- * - ignoring candidates
- * - clearing currently visible discovery results
- * - validating and storing uploaded CSV files
- *
- * The frontend only displays results and sends user actions.
+ * candidates, provider status, CSV uploads, and discovery actions.
  */
 
 import apiClient from "./apiClient";
+
+/**
+ * Fetch provider status/configuration report.
+ *
+ * @returns {Promise<object>} Provider status report.
+ */
+export async function fetchDiscoveryProviderStatus() {
+  const response = await apiClient.get("/discover-bonds/provider-status/");
+
+  return response.data;
+}
 
 /**
  * Fetch visible discovered bond candidates for the authenticated user.
@@ -42,6 +41,7 @@ export async function fetchDiscoveredBonds(params = {}) {
  * Supported sources:
  * - static_provider
  * - csv_provider
+ * - external_json_provider
  *
  * @param {object} payload - Optional discovery filters.
  * @returns {Promise<object>} Discovery run result and visible candidates.

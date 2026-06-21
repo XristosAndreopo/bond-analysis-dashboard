@@ -1,26 +1,21 @@
 """
-URL routes for bond-related API endpoints.
+URL configuration for the bonds app.
 
-This module registers:
-- Bond master data endpoints
-- Bond market data endpoints
+This file exposes:
+- bond master data endpoints
+- market data endpoints
 - FX rate endpoints
-- Bond discovery endpoints
-- CSV bond universe upload endpoint
-
-Discovery endpoints:
-    GET  /api/discover-bonds/
-    POST /api/discover-bonds/run/
-    POST /api/discover-bonds/<id>/add-to-watchlist/
-    POST /api/discover-bonds/<id>/ignore/
-    POST /api/discover-bonds/upload-csv/
+- FX live update endpoint
+- discovery endpoints
+- CSV upload endpoint
+- provider status endpoint
 """
 
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
+from .discovery.provider_status_views import DiscoveryProviderStatusAPIView
 from .discovery.upload_views import BondUniverseCSVUploadAPIView
-
 from .views import (
     BondCandidateDiscoveryViewSet,
     BondMarketDataViewSet,
@@ -31,13 +26,13 @@ from .views import (
 
 
 router = DefaultRouter()
-router.register("bonds", BondViewSet, basename="bonds")
+router.register("bonds", BondViewSet, basename="bond")
 router.register("market-data", BondMarketDataViewSet, basename="market-data")
-router.register("fx-rates", FXRateViewSet, basename="fx-rates")
+router.register("fx-rates", FXRateViewSet, basename="fx-rate")
 router.register(
     "discover-bonds",
     BondCandidateDiscoveryViewSet,
-    basename="discover-bonds",
+    basename="discover-bond",
 )
 
 
@@ -51,6 +46,11 @@ urlpatterns = [
         "discover-bonds/upload-csv/",
         BondUniverseCSVUploadAPIView.as_view(),
         name="bond-universe-csv-upload",
+    ),
+    path(
+        "discover-bonds/provider-status/",
+        DiscoveryProviderStatusAPIView.as_view(),
+        name="discovery-provider-status",
     ),
     path("", include(router.urls)),
 ]

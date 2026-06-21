@@ -4,6 +4,7 @@
  * Displays bond candidates produced by the backend discovery engine.
  *
  * The frontend does not invent bond data. It only:
+ * - shows provider status/configuration
  * - lets the user download a CSV template
  * - lets the user upload a CSV bond universe
  * - lets the user choose discovery filters
@@ -12,6 +13,16 @@
  * - displays backend-calculated preview risk/signal
  * - clears current visible results when requested
  * - sends Add to Watchlist or Ignore actions
+ *
+ * The backend remains responsible for:
+ * - provider data loading
+ * - CSV validation
+ * - external JSON/API mapping
+ * - rating filtering
+ * - maturity filtering
+ * - duplicate checks
+ * - user ownership rules
+ * - preview risk/signal calculation
  */
 
 import { useEffect, useState } from "react";
@@ -21,6 +32,7 @@ import {
   addDiscoveredBondToWatchlist,
   clearCurrentDiscoveryResults,
   fetchDiscoveredBonds,
+  fetchDiscoveryProviderStatus,
   ignoreDiscoveredBond,
   runBondDiscovery,
   uploadDiscoveryCsv,
@@ -135,7 +147,9 @@ function DiscoverBondsPage() {
   const [candidates, setCandidates] = useState([]);
   const [lastDiscoveryRun, setLastDiscoveryRun] = useState(null);
   const [lastCsvUpload, setLastCsvUpload] = useState(null);
+  const [providerStatus, setProviderStatus] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingProviderStatus, setIsLoadingProviderStatus] = useState(false);
   const [isRunningDiscovery, setIsRunningDiscovery] = useState(false);
   const [isUploadingCsv, setIsUploadingCsv] = useState(false);
   const [isClearingResults, setIsClearingResults] = useState(false);
@@ -144,8 +158,22 @@ function DiscoverBondsPage() {
   const [successMessage, setSuccessMessage] = useState("");
 
   useEffect(() => {
+    loadProviderStatus();
     loadCandidates();
   }, []);
+
+  async function loadProviderStatus() {
+    setIsLoadingProviderStatus(true);
+
+    try {
+      const data = await fetchDiscoveryProviderStatus();
+      setProviderStatus(data);
+    } catch (error) {
+      setProviderStatus(null);
+    } finally {
+      setIsLoadingProviderStatus(false);
+    }
+  }
 
   async function loadCandidates(discoveryRunId = null) {
     setIsLoading(true);
@@ -234,6 +262,8 @@ function DiscoverBondsPage() {
       setSuccessMessage(
         "CSV uploaded successfully. Source changed to CSV Provider. Press Run Discovery."
       );
+
+      await loadProviderStatus();
     } catch (error) {
       setErrorMessage(getApiErrorMessage(error, "Could not upload CSV file."));
     } finally {
@@ -351,6 +381,12 @@ function DiscoverBondsPage() {
         investment advice and they do not represent a recommendation to buy or
         sell securities.
       </div>
+
+      <ProviderStatusSection
+        providerStatus={providerStatus}
+        isLoading={isLoadingProviderStatus}
+        onRefresh={loadProviderStatus}
+      />
 
       <div className="toolbar-card">
         <div className="section-header">
@@ -658,6 +694,88 @@ function DiscoverBondsPage() {
         )}
       </div>
     </section>
+  );
+}
+
+function ProviderStatusSection({ providerStatus, isLoading, onRefresh }) {
+  return (
+    <div className="toolbar-card">
+      <div className="section-header section-header-with-actions">
+        <div>
+          <h2>Provider Status</h2>
+          <p>
+            Check which discovery providers are available before running bond
+            discovery.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={onRefresh}
+          disabled={isLoading}
+        >
+          {isLoading ? "Refreshing..." : "Refresh Status"}
+        </button>
+      </div>
+
+      {!providerStatus ? (
+        <p className="helper-text">Provider status is not available yet.</p>
+      ) : (
+        <>
+          <p className="helper-text">
+            Default source: {providerStatus.default_source}. Supported sources:{" "}
+            {providerStatus.supported_sources?.join(", ")}.
+          </p>
+
+          <div className="summary-card-grid">
+            {providerStatus.providers?.map((provider) => (
+              <ProviderStatusCard
+                provider={provider}
+                key={provider.source}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ProviderStatusCard({ provider }) {
+  const configuration = provider.configuration || {};
+
+  return (
+    <div className="summary-card">
+      <span>{provider.label}</span>
+
+      <strong>{provider.available ? "Available" : "Needs attention"}</strong>
+
+      <p className="helper-text">Mode: {provider.mode}</p>
+
+      <p className="helper-text">{provider.detail}</p>
+
+      {provider.file_name && (
+        <p className="helper-text">File: {provider.file_name}</p>
+      )}
+
+      {provider.candidate_count !== null &&
+        provider.candidate_count !== undefined && (
+          <p className="helper-text">
+            Candidates: {provider.candidate_count}
+          </p>
+        )}
+
+      {provider.source === "external_json_provider" && (
+        <p className="helper-text">
+          API URL:{" "}
+          {configuration.external_api_url_configured ? "Configured" : "Not set"}
+          {" | "}
+          API Key:{" "}
+          {configuration.external_api_key_configured ? "Configured" : "Not set"}
+        </p>
+      )}
+    </div>
   );
 }
 
