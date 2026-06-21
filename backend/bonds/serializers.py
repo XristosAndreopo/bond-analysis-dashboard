@@ -11,6 +11,16 @@ This module contains serializers for:
 
 Discovery candidates include preview risk/signal fields. These preview fields
 are calculated dynamically and are not stored in the database.
+
+AI-researched data is exposed with transparency metadata:
+- data_origin
+- source_url
+- retrieved_at
+- confidence
+- needs_review
+- review_status
+- missing_fields
+- research_payload
 """
 
 from rest_framework import serializers
@@ -87,6 +97,9 @@ class BondSerializer(serializers.ModelSerializer):
 class BondMarketDataSerializer(serializers.ModelSerializer):
     """
     Serializer for BondMarketData.
+
+    This serializer exposes both analytical market fields and transparency
+    metadata for AI-researched/imported market data.
     """
 
     effective_discount_rate = serializers.DecimalField(
@@ -100,6 +113,18 @@ class BondMarketDataSerializer(serializers.ModelSerializer):
     )
     bond_name = serializers.CharField(
         source="bond.name",
+        read_only=True,
+    )
+    data_origin_label = serializers.CharField(
+        source="get_data_origin_display",
+        read_only=True,
+    )
+    confidence_label = serializers.CharField(
+        source="get_confidence_display",
+        read_only=True,
+    )
+    review_status_label = serializers.CharField(
+        source="get_review_status_display",
         read_only=True,
     )
 
@@ -118,7 +143,18 @@ class BondMarketDataSerializer(serializers.ModelSerializer):
             "ask_price",
             "effective_discount_rate",
             "source",
+            "source_url",
+            "data_origin",
+            "data_origin_label",
             "is_manual",
+            "retrieved_at",
+            "confidence",
+            "confidence_label",
+            "needs_review",
+            "review_status",
+            "review_status_label",
+            "missing_fields",
+            "research_payload",
             "notes",
             "created_at",
             "updated_at",
@@ -263,6 +299,9 @@ class BondCandidateSerializer(serializers.ModelSerializer):
     The preview fields are calculated dynamically and are not database fields.
     They help the frontend show a first-level candidate signal before the bond
     is added to the user's Watchlist.
+
+    AI research metadata is exposed so the frontend can clearly show that the
+    data is AI-researched/imported and may need manual review.
     """
 
     username = serializers.CharField(
@@ -275,6 +314,18 @@ class BondCandidateSerializer(serializers.ModelSerializer):
     )
     status_label = serializers.CharField(
         source="get_status_display",
+        read_only=True,
+    )
+    data_origin_label = serializers.CharField(
+        source="get_data_origin_display",
+        read_only=True,
+    )
+    confidence_label = serializers.CharField(
+        source="get_confidence_display",
+        read_only=True,
+    )
+    review_status_label = serializers.CharField(
+        source="get_review_status_display",
         read_only=True,
     )
 
@@ -304,6 +355,16 @@ class BondCandidateSerializer(serializers.ModelSerializer):
             "duration",
             "source",
             "source_url",
+            "data_origin",
+            "data_origin_label",
+            "retrieved_at",
+            "confidence",
+            "confidence_label",
+            "needs_review",
+            "review_status",
+            "review_status_label",
+            "missing_fields",
+            "research_payload",
             "ai_summary",
             "ai_reasoning",
             "preview_risk_level",

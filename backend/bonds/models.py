@@ -8,12 +8,12 @@ This module contains:
 - Bond discovery run records
 - Bond discovery candidate records
 
-FX conversion is intentionally manual for the MVP. Later, FX rates can be
-loaded automatically from an external data provider.
-
-The discovery models do not use AI as a data source. They only store validated
-candidate data coming from a provider such as a static provider, CSV import, or
-future external API.
+Important data strategy:
+- Bond data can come from manual entry, CSV import, static providers, or
+  AI-assisted web research.
+- AI-researched data is not treated as an official live market feed.
+- AI-researched records must keep source, timestamp, confidence, review status,
+  and raw research payload for transparency.
 """
 
 from decimal import Decimal
@@ -22,6 +22,42 @@ from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
+
+
+class DataOrigin(models.TextChoices):
+    """
+    Identifies where a stored data record came from.
+
+    This is important because the app must distinguish official/manual data
+    from AI-researched data.
+    """
+
+    MANUAL = "MANUAL", "Manual"
+    CSV_IMPORT = "CSV_IMPORT", "CSV Import"
+    STATIC_PROVIDER = "STATIC_PROVIDER", "Static Provider"
+    AI_RESEARCH = "AI_RESEARCH", "AI Research"
+    EXTERNAL_JSON = "EXTERNAL_JSON", "External JSON"
+    OTHER = "OTHER", "Other"
+
+
+class ResearchConfidence(models.TextChoices):
+    """
+    Confidence level for researched/imported data.
+    """
+
+    HIGH = "HIGH", "High"
+    MEDIUM = "MEDIUM", "Medium"
+    LOW = "LOW", "Low"
+
+
+class ReviewStatus(models.TextChoices):
+    """
+    Review status for imported or AI-researched data.
+    """
+
+    NEEDS_REVIEW = "NEEDS_REVIEW", "Needs Review"
+    REVIEWED = "REVIEWED", "Reviewed"
+    REJECTED = "REJECTED", "Rejected"
 
 
 class Bond(models.Model):
@@ -131,6 +167,11 @@ class BondMarketData(models.Model):
 
     The market_required_return field is the primary discount rate used by the
     analysis engine. If it is missing, ytm is used as fallback.
+
+    AI-researched market data is allowed, but it must be transparent:
+    - source_url should point to the page used.
+    - retrieved_at should show when the AI research was performed.
+    - confidence and review_status must make uncertainty visible.
     """
 
     bond = models.ForeignKey(
@@ -171,7 +212,49 @@ class BondMarketData(models.Model):
         blank=True,
     )
     source = models.CharField(max_length=100, default="manual")
+    source_url = models.URLField(
+        max_length=500,
+        blank=True,
+        help_text="Source URL used for this market data record, when available.",
+    )
+    data_origin = models.CharField(
+        max_length=30,
+        choices=DataOrigin.choices,
+        default=DataOrigin.MANUAL,
+        db_index=True,
+    )
     is_manual = models.BooleanField(default=True)
+    retrieved_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When this record was retrieved from the source.",
+    )
+    confidence = models.CharField(
+        max_length=20,
+        choices=ResearchConfidence.choices,
+        default=ResearchConfidence.MEDIUM,
+        db_index=True,
+    )
+    needs_review = models.BooleanField(
+        default=False,
+        db_index=True,
+    )
+    review_status = models.CharField(
+        max_length=30,
+        choices=ReviewStatus.choices,
+        default=ReviewStatus.REVIEWED,
+        db_index=True,
+    )
+    missing_fields = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Fields that were missing during import or AI research.",
+    )
+    research_payload = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Raw structured payload used to create this record.",
+    )
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -434,6 +517,9 @@ class BondCandidate(models.Model):
 
     Candidates are user-specific because each user has a separate Watchlist and
     Portfolio.
+
+    AI-researched candidates must keep transparency metadata. The application
+    must not present AI-researched data as an official live market feed.
     """
 
     class Status(models.TextChoices):
@@ -527,6 +613,43 @@ class BondCandidate(models.Model):
     source_url = models.URLField(
         max_length=500,
         blank=True,
+    )
+    data_origin = models.CharField(
+        max_length=30,
+        choices=DataOrigin.choices,
+        default=DataOrigin.STATIC_PROVIDER,
+        db_index=True,
+    )
+    retrieved_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When this candidate was retrieved from the source.",
+    )
+    confidence = models.CharField(
+        max_length=20,
+        choices=ResearchConfidence.choices,
+        default=ResearchConfidence.MEDIUM,
+        db_index=True,
+    )
+    needs_review = models.BooleanField(
+        default=True,
+        db_index=True,
+    )
+    review_status = models.CharField(
+        max_length=30,
+        choices=ReviewStatus.choices,
+        default=ReviewStatus.NEEDS_REVIEW,
+        db_index=True,
+    )
+    missing_fields = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Fields missing from the researched/imported candidate.",
+    )
+    research_payload = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Raw structured payload used to create this candidate.",
     )
     ai_summary = models.TextField(
         blank=True,
