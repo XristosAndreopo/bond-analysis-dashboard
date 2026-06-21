@@ -9,6 +9,13 @@
  * - For a EUR-based user, the final decision also depends on USD/EUR.
  *
  * FX rates are updated from the central FX Rates page.
+ *
+ * Important:
+ * - Discover Bonds shows only preliminary indications.
+ * - Watchlist shows the full backend analysis.
+ * - The discount rate shown here is the effective discount rate used by the
+ *   backend analysis. If market_required_return is missing, the backend uses
+ *   YTM as fallback.
  */
 
 import { useEffect, useState } from "react";
@@ -96,6 +103,12 @@ function WatchlistPage() {
 
       <Disclaimer text={watchlistData?.disclaimer} />
 
+      <div className="warning-box">
+        Η αξιολόγηση στο Watchlist είναι η πλήρης αξιολόγηση και μπορεί να
+        διαφέρει από την προκαταρκτική ένδειξη του Discover Bonds, επειδή εδώ
+        λαμβάνονται υπόψη όλα τα απαραίτητα στοιχεία.
+      </div>
+
       {errorMessage && <div className="error-box">{errorMessage}</div>}
 
       {metrics.fx_warning && (
@@ -130,7 +143,7 @@ function WatchlistPage() {
                   <th>FX Rate</th>
                   <th>Converted Price</th>
                   <th>YTM</th>
-                  <th>Required Return</th>
+                  <th>Discount Rate</th>
                   <th>Risk</th>
                   <th>Signal</th>
                   <th>Reasoning</th>
@@ -194,10 +207,7 @@ function WatchlistPage() {
                         <td>{formatPercent(marketData?.ytm, 2)}</td>
 
                         <td>
-                          {formatPercent(
-                            marketData?.market_required_return,
-                            2
-                          )}
+                          <DiscountRateCell marketData={marketData} />
                         </td>
 
                         <td>
@@ -225,12 +235,51 @@ function WatchlistPage() {
 
           <p className="helper-text">
             Converted prices use {portfolioBaseCurrency} when the required FX
-            rate exists.
+            rate exists. The Discount Rate column shows the effective rate used
+            by the backend analysis. If Market Required Return is missing, YTM
+            is used as fallback.
           </p>
         </div>
       )}
     </section>
   );
+}
+
+function DiscountRateCell({ marketData }) {
+  /**
+   * Show the effective discount rate used by the backend analysis.
+   *
+   * Backend rule:
+   * 1. market_required_return
+   * 2. ytm fallback
+   * 3. empty if both are missing
+   */
+  if (!marketData?.effective_discount_rate) {
+    return "-";
+  }
+
+  return (
+    <>
+      {formatPercent(marketData.effective_discount_rate, 2)}
+      <br />
+      <small>{getDiscountRateSourceLabel(marketData)}</small>
+    </>
+  );
+}
+
+function getDiscountRateSourceLabel(marketData) {
+  /**
+   * Return a small explanation for the discount rate source.
+   */
+  if (marketData?.market_required_return) {
+    return "Market required return";
+  }
+
+  if (marketData?.ytm) {
+    return "YTM fallback";
+  }
+
+  return "No rate source";
 }
 
 export default WatchlistPage;
