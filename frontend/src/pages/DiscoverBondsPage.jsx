@@ -4,13 +4,15 @@
  * Displays bond candidates produced by the backend discovery engine.
  *
  * The frontend does not invent bond data. It only:
+ * - lets the user download a CSV template
+ * - lets the user upload a CSV bond universe
  * - lets the user choose discovery filters
  * - asks the backend to run discovery
  * - displays validated candidates
  * - displays backend-calculated preview risk/signal
  * - sends Add to Watchlist or Ignore actions
  *
- * The backend remains responsible for provider data, validation, rating
+ * The backend remains responsible for provider data, CSV validation, rating
  * filtering, maturity filtering, duplicate checks, user ownership rules,
  * and preview signal calculation.
  */
@@ -23,6 +25,7 @@ import {
   fetchDiscoveredBonds,
   ignoreDiscoveredBond,
   runBondDiscovery,
+  uploadDiscoveryCsv,
 } from "../api/discoveryApi";
 import RiskBadge from "../components/RiskBadge";
 import SignalBadge from "../components/SignalBadge";
@@ -75,12 +78,67 @@ const DEFAULT_FILTERS = {
   country: "",
 };
 
+const CSV_TEMPLATE_COLUMNS = [
+  "isin",
+  "name",
+  "issuer",
+  "country",
+  "currency",
+  "coupon_rate",
+  "maturity_date",
+  "credit_rating",
+  "rating_source",
+  "market_price",
+  "ytm",
+  "duration",
+  "source",
+  "source_url",
+];
+
+const CSV_TEMPLATE_ROWS = [
+  [
+    "US91282CQU89",
+    "U.S. Treasury Note 4.125% 2031",
+    "United States Treasury",
+    "US",
+    "USD",
+    "4.125",
+    "2031-05-31",
+    "AA+",
+    "Manual CSV",
+    "100.5000",
+    "4.1000",
+    "4.4500",
+    "csv_provider",
+    "",
+  ],
+  [
+    "GR0114033583",
+    "GGB 3.875% 2028",
+    "Hellenic Republic",
+    "GR",
+    "EUR",
+    "3.875",
+    "2028-06-15",
+    "BBB-",
+    "Manual CSV",
+    "99.7500",
+    "3.9500",
+    "2.1000",
+    "csv_provider",
+    "",
+  ],
+];
+
 function DiscoverBondsPage() {
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
+  const [selectedCsvFile, setSelectedCsvFile] = useState(null);
   const [candidates, setCandidates] = useState([]);
   const [lastDiscoveryRun, setLastDiscoveryRun] = useState(null);
+  const [lastCsvUpload, setLastCsvUpload] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRunningDiscovery, setIsRunningDiscovery] = useState(false);
+  const [isUploadingCsv, setIsUploadingCsv] = useState(false);
   const [candidateActionId, setCandidateActionId] = useState(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
@@ -117,6 +175,31 @@ function DiscoverBondsPage() {
     setFilters(DEFAULT_FILTERS);
   }
 
+  function handleCsvFileChange(event) {
+    const file = event.target.files?.[0] || null;
+
+    setSelectedCsvFile(file);
+    setLastCsvUpload(null);
+    setSuccessMessage("");
+    setErrorMessage("");
+  }
+
+  function handleDownloadCsvTemplate() {
+    const csvContent = buildCsvTemplateContent();
+    const blob = new Blob([csvContent], {
+      type: "text/csv;charset=utf-8;",
+    });
+
+    const downloadUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = downloadUrl;
+    link.download = "bond_universe_template.csv";
+    link.click();
+
+    URL.revokeObjectURL(downloadUrl);
+  }
+
   function buildDiscoveryPayload() {
     return {
       source: filters.source,
@@ -124,6 +207,34 @@ function DiscoverBondsPage() {
       currencies: filters.currency ? [filters.currency] : [],
       countries: filters.country ? [filters.country] : [],
     };
+  }
+
+  async function handleUploadCsv() {
+    if (!selectedCsvFile) {
+      setErrorMessage("Please choose a CSV file first.");
+      return;
+    }
+
+    setIsUploadingCsv(true);
+    setSuccessMessage("");
+    setErrorMessage("");
+
+    try {
+      const result = await uploadDiscoveryCsv(selectedCsvFile);
+
+      setLastCsvUpload(result.upload || null);
+      setFilters((currentFilters) => ({
+        ...currentFilters,
+        source: "csv_provider",
+      }));
+      setSuccessMessage(
+        "CSV uploaded successfully. Source changed to CSV Provider. Press Run Discovery."
+      );
+    } catch (error) {
+      setErrorMessage(getApiErrorMessage(error, "Could not upload CSV file."));
+    } finally {
+      setIsUploadingCsv(false);
+    }
   }
 
   async function handleRunDiscovery() {
@@ -206,6 +317,64 @@ function DiscoverBondsPage() {
         Discovery candidates are educational analytical data only. They are not
         investment advice and they do not represent a recommendation to buy or
         sell securities.
+      </div>
+
+      <div className="toolbar-card">
+        <div className="section-header">
+          <div>
+            <h2>Upload CSV Bond Universe</h2>
+            <p>
+              Upload a CSV file to replace the local CSV Provider universe.
+              The backend validates the file before saving it.
+            </p>
+          </div>
+        </div>
+
+        <div className="form-grid">
+          <label>
+            CSV File
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              onChange={handleCsvFileChange}
+            />
+          </label>
+
+          <label>
+            Selected File
+            <input
+              type="text"
+              value={selectedCsvFile?.name || "No file selected"}
+              readOnly
+            />
+          </label>
+        </div>
+
+        <div className="form-actions">
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={handleDownloadCsvTemplate}
+          >
+            Download CSV Template
+          </button>
+
+          <button
+            type="button"
+            className="primary-button"
+            onClick={handleUploadCsv}
+            disabled={isUploadingCsv || !selectedCsvFile}
+          >
+            {isUploadingCsv ? "Uploading..." : "Upload CSV"}
+          </button>
+        </div>
+
+        {lastCsvUpload && (
+          <p className="helper-text">
+            Uploaded rows: {lastCsvUpload.row_count}. Stored as CSV Provider
+            universe.
+          </p>
+        )}
       </div>
 
       <div className="toolbar-card">
@@ -461,6 +630,32 @@ function DiscoveryRunCard({ title, value }) {
       <strong>{value ?? "-"}</strong>
     </div>
   );
+}
+
+function buildCsvTemplateContent() {
+  /**
+   * Build a CSV template file with headers and example rows.
+   */
+  const rows = [CSV_TEMPLATE_COLUMNS, ...CSV_TEMPLATE_ROWS];
+
+  return rows.map((row) => row.map(escapeCsvValue).join(",")).join("\n");
+}
+
+function escapeCsvValue(value) {
+  /**
+   * Escape one value for safe CSV output.
+   */
+  const stringValue = String(value ?? "");
+
+  if (
+    stringValue.includes(",") ||
+    stringValue.includes('"') ||
+    stringValue.includes("\n")
+  ) {
+    return `"${stringValue.replaceAll('"', '""')}"`;
+  }
+
+  return stringValue;
 }
 
 function getApiErrorMessage(error, fallbackMessage) {

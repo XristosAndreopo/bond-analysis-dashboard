@@ -2,13 +2,16 @@
  * API functions for the Watchlist Discovery Engine.
  *
  * This file contains all frontend requests related to discovered bond
- * candidates. The backend remains responsible for:
+ * candidates and CSV bond universe uploads.
+ *
+ * The backend remains responsible for:
  * - running discovery
  * - validating provider data
  * - filtering by rating and maturity
  * - excluding existing Watchlist/Portfolio bonds
  * - adding candidates to the user's Watchlist
  * - ignoring candidates
+ * - validating and storing uploaded CSV files
  *
  * The frontend only displays results and sends user actions.
  */
@@ -37,12 +40,17 @@ export async function fetchDiscoveredBonds() {
 /**
  * Run the backend bond discovery engine.
  *
- * For the MVP, the backend supports the static provider.
- * The payload is optional. If no payload is provided, the backend uses:
- * - source: static_provider
- * - min_rating: BBB-
- * - currencies: []
- * - countries: []
+ * Supported sources:
+ * - static_provider
+ * - csv_provider
+ *
+ * Example payload:
+ * {
+ *   source: "csv_provider",
+ *   min_rating: "BBB-",
+ *   currencies: ["EUR"],
+ *   countries: ["GR"]
+ * }
  *
  * @param {object} payload - Optional discovery filters.
  * @returns {Promise<object>} Discovery run result and visible candidates.
@@ -76,7 +84,7 @@ export async function addDiscoveredBondToWatchlist(candidateId) {
 /**
  * Ignore a discovered candidate.
  *
- * Ignored candidates disappear from the Discover Bonds tab and should not be
+ * Ignored candidates disappear from the Discover Bonds page and should not be
  * shown again in future discovery runs.
  *
  * @param {number|string} candidateId - BondCandidate id.
@@ -85,6 +93,35 @@ export async function addDiscoveredBondToWatchlist(candidateId) {
 export async function ignoreDiscoveredBond(candidateId) {
   const response = await apiClient.post(
     `/discover-bonds/${candidateId}/ignore/`
+  );
+
+  return response.data;
+}
+
+/**
+ * Upload a CSV bond universe file.
+ *
+ * The backend validates the file before replacing the existing CSV universe.
+ * The old CSV remains unchanged if validation fails.
+ *
+ * Expected CSV field name:
+ * - file
+ *
+ * @param {File} file - CSV file selected by the user.
+ * @returns {Promise<object>} Upload summary.
+ */
+export async function uploadDiscoveryCsv(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await apiClient.post(
+    "/discover-bonds/upload-csv/",
+    formData,
+    {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    }
   );
 
   return response.data;
