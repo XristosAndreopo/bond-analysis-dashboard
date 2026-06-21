@@ -105,7 +105,9 @@ function BondDetailPage() {
         notes: marketDataForm.notes || "",
       });
 
-      setSuccessMessage("Τα market data αποθηκεύτηκαν και η ανάλυση ενημερώθηκε.");
+      setSuccessMessage(
+        "Τα market data αποθηκεύτηκαν και η ανάλυση ενημερώθηκε."
+      );
       setIsMarketFormVisible(false);
 
       await loadPositionDetail();
@@ -136,14 +138,12 @@ function BondDetailPage() {
     };
 
     /*
-    * When moving from Watchlist to Portfolio, the backend needs quantity.
-    * We avoid browser prompts because they can fail or be cancelled silently.
-    *
-    * Default logic:
-    * - quantity: 1
-    * - purchase_price: latest market price, otherwise existing purchase price,
-    *   otherwise bond face value.
-    */
+     * When moving from Watchlist to Portfolio, the backend needs quantity.
+     * Default logic:
+     * - quantity: 1
+     * - purchase_price: latest market price, otherwise existing purchase price,
+     *   otherwise bond face value.
+     */
     if (targetHoldingType === "PORTFOLIO") {
       payload.quantity = 1;
       payload.purchase_price =
@@ -181,7 +181,6 @@ function BondDetailPage() {
       setIsMovingPosition(false);
     }
   }
-
 
   async function handleDeletePosition() {
     if (!detailData?.item) {
@@ -253,7 +252,9 @@ function BondDetailPage() {
             className="secondary-button"
             onClick={() => setIsMarketFormVisible((value) => !value)}
           >
-            {isMarketFormVisible ? "Hide Market Data" : "Add / Update Market Data"}
+            {isMarketFormVisible
+              ? "Hide Market Data"
+              : "Add / Update Market Data"}
           </button>
 
           <button
@@ -306,7 +307,10 @@ function BondDetailPage() {
           <InfoRow label="Credit Rating" value={bond.credit_rating || "-"} />
           <InfoRow label="Liquidity" value={bond.market_liquidity_label} />
           <InfoRow label="Maturity" value={bond.maturity_date} />
-          <InfoRow label="Coupon" value={formatPercent(bond.annual_coupon_rate, 3)} />
+          <InfoRow
+            label="Coupon"
+            value={formatPercent(bond.annual_coupon_rate, 3)}
+          />
           <InfoRow label="Frequency" value={bond.coupon_frequency} />
         </div>
 
@@ -316,22 +320,27 @@ function BondDetailPage() {
           {marketData ? (
             <>
               <InfoRow label="Quote Date" value={marketData.quote_date} />
+
               <InfoRow
                 label="Market Price"
                 value={formatMoney(marketData.market_price, bond.currency, 4)}
               />
+
               <InfoRow label="YTM" value={formatPercent(marketData.ytm, 3)} />
+
               <InfoRow
-                label="Required Return"
-                value={formatPercent(marketData.market_required_return, 3)}
+                label="Discount Rate"
+                value={<DiscountRateValue marketData={marketData} />}
               />
+
               <InfoRow
                 label="Bid / Ask"
-                value={`${formatDecimal(marketData.bid_price, 4)} / ${formatDecimal(
-                  marketData.ask_price,
+                value={`${formatDecimal(
+                  marketData.bid_price,
                   4
-                )}`}
+                )} / ${formatDecimal(marketData.ask_price, 4)}`}
               />
+
               <InfoRow label="Source" value={marketData.source} />
             </>
           ) : (
@@ -418,10 +427,11 @@ function BondDetailPage() {
             <thead>
               <tr>
                 <th>Payment Date</th>
-                <th>Coupon</th>
+                <th>Gross Coupon</th>
+                <th>Coupon Tax</th>
+                <th>Net Coupon</th>
                 <th>Principal</th>
                 <th>Total Cash Flow</th>
-                <th>Discount Factor</th>
                 <th>Discounted Cash Flow</th>
               </tr>
             </thead>
@@ -429,16 +439,53 @@ function BondDetailPage() {
             <tbody>
               {cashFlows.length === 0 ? (
                 <tr>
-                  <td colSpan="6">Δεν υπάρχουν διαθέσιμες ταμειακές ροές.</td>
+                  <td colSpan="7">Δεν υπάρχουν διαθέσιμες ταμειακές ροές.</td>
                 </tr>
               ) : (
                 cashFlows.map((cashFlow) => (
                   <tr key={cashFlow.id}>
                     <td>{cashFlow.payment_date}</td>
-                    <td>{formatMoney(cashFlow.coupon_amount, bond.currency, 2)}</td>
-                    <td>{formatMoney(cashFlow.principal_amount, bond.currency, 2)}</td>
-                    <td>{formatMoney(cashFlow.total_cash_flow, bond.currency, 2)}</td>
-                    <td>{formatDecimal(cashFlow.discount_factor, 6)}</td>
+
+                    <td>
+                      {formatMoney(
+                        cashFlow.coupon_gross,
+                        bond.currency,
+                        2
+                      )}
+                    </td>
+
+                    <td>
+                      {formatMoney(
+                        cashFlow.coupon_tax,
+                        bond.currency,
+                        2
+                      )}
+                    </td>
+
+                    <td>
+                      {formatMoney(
+                        cashFlow.coupon_net,
+                        bond.currency,
+                        2
+                      )}
+                    </td>
+
+                    <td>
+                      {formatMoney(
+                        cashFlow.principal,
+                        bond.currency,
+                        2
+                      )}
+                    </td>
+
+                    <td>
+                      {formatMoney(
+                        cashFlow.total_cash_flow,
+                        bond.currency,
+                        2
+                      )}
+                    </td>
+
                     <td>
                       {formatMoney(
                         cashFlow.discounted_cash_flow,
@@ -452,6 +499,12 @@ function BondDetailPage() {
             </tbody>
           </table>
         </div>
+
+        <p className="helper-text">
+          Οι ταμειακές ροές υπολογίζονται από το backend. Ο πίνακας εμφανίζει
+          τα ποσά που επιστρέφει το API: gross coupon, coupon tax, net coupon,
+          principal, total cash flow και discounted cash flow.
+        </p>
       </div>
     </section>
   );
@@ -551,7 +604,11 @@ function MarketDataForm({ formData, isSubmitting, onChange, onSubmit }) {
         />
       </label>
 
-      <button type="submit" className="primary-link-button" disabled={isSubmitting}>
+      <button
+        type="submit"
+        className="primary-link-button"
+        disabled={isSubmitting}
+      >
         {isSubmitting ? "Saving..." : "Save Market Data"}
       </button>
     </form>
@@ -574,6 +631,32 @@ function MetricCard({ label, value }) {
       <strong>{value || "-"}</strong>
     </div>
   );
+}
+
+function DiscountRateValue({ marketData }) {
+  if (!marketData?.effective_discount_rate) {
+    return "-";
+  }
+
+  return (
+    <>
+      {formatPercent(marketData.effective_discount_rate, 3)}
+      <br />
+      <small>{getDiscountRateSourceLabel(marketData)}</small>
+    </>
+  );
+}
+
+function getDiscountRateSourceLabel(marketData) {
+  if (marketData?.market_required_return) {
+    return "Market required return";
+  }
+
+  if (marketData?.ytm) {
+    return "YTM fallback";
+  }
+
+  return "No rate source";
 }
 
 function getEmptyMarketDataForm() {
