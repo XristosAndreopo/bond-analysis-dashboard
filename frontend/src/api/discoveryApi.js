@@ -21,6 +21,9 @@ import apiClient from "./apiClient";
 /**
  * Fetch visible discovered bond candidates for the authenticated user.
  *
+ * Optional params:
+ * - discovery_run_id: limits results to one DiscoveryRun.
+ *
  * The backend returns only candidates that:
  * - belong to the logged-in user
  * - have status NEW or REVIEWED
@@ -29,10 +32,13 @@ import apiClient from "./apiClient";
  * - are not ignored
  * - are not already added to Watchlist
  *
+ * @param {object} params - Optional query parameters.
  * @returns {Promise<Array>} Visible bond candidates.
  */
-export async function fetchDiscoveredBonds() {
-  const response = await apiClient.get("/discover-bonds/");
+export async function fetchDiscoveredBonds(params = {}) {
+  const response = await apiClient.get("/discover-bonds/", {
+    params,
+  });
 
   return response.data;
 }
@@ -104,7 +110,7 @@ export async function ignoreDiscoveredBond(candidateId) {
  * The backend validates the file before replacing the existing CSV universe.
  * The old CSV remains unchanged if validation fails.
  *
- * Expected CSV field name:
+ * Expected multipart field name:
  * - file
  *
  * @param {File} file - CSV file selected by the user.

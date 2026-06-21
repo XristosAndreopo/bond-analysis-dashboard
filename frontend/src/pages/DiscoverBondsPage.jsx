@@ -147,13 +147,17 @@ function DiscoverBondsPage() {
     loadCandidates();
   }, []);
 
-  async function loadCandidates() {
+  async function loadCandidates(discoveryRunId = null) {
     setIsLoading(true);
 
     try {
       setErrorMessage("");
 
-      const data = await fetchDiscoveredBonds();
+      const params = discoveryRunId
+        ? { discovery_run_id: discoveryRunId }
+        : {};
+
+      const data = await fetchDiscoveredBonds(params);
       setCandidates(Array.isArray(data) ? data : []);
     } catch (error) {
       setErrorMessage("Could not load discovered bond candidates.");
@@ -244,8 +248,9 @@ function DiscoverBondsPage() {
 
     try {
       const result = await runBondDiscovery(buildDiscoveryPayload());
+      const discoveryRun = result.run || null;
 
-      setLastDiscoveryRun(result.run || null);
+      setLastDiscoveryRun(discoveryRun);
       setCandidates(Array.isArray(result.candidates) ? result.candidates : []);
       setSuccessMessage("Discovery completed successfully.");
     } catch (error) {
@@ -264,7 +269,7 @@ function DiscoverBondsPage() {
 
     try {
       await addDiscoveredBondToWatchlist(candidateId);
-      await loadCandidates();
+      await loadCandidates(lastDiscoveryRun?.id || null);
 
       setSuccessMessage("Candidate added to My Watchlist.");
     } catch (error) {
@@ -283,7 +288,7 @@ function DiscoverBondsPage() {
 
     try {
       await ignoreDiscoveredBond(candidateId);
-      await loadCandidates();
+      await loadCandidates(lastDiscoveryRun?.id || null);
 
       setSuccessMessage("Candidate ignored.");
     } catch (error) {
