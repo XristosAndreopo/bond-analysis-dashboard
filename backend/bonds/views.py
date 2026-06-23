@@ -19,7 +19,6 @@ Discovery endpoints are user-specific:
 """
 
 from django.db.models import Q
-from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.mixins import ListModelMixin
@@ -440,8 +439,8 @@ class BondCandidateDiscoveryViewSet(ListModelMixin, GenericViewSet):
         """
         Clear currently visible discovery results.
 
-        This does not delete records from the database.
-        It marks visible candidates as IGNORED.
+        This action removes temporary visible candidates from the database.
+        It does not mark them as IGNORED.
 
         Request payload:
             {
@@ -449,15 +448,16 @@ class BondCandidateDiscoveryViewSet(ListModelMixin, GenericViewSet):
             }
 
         If discovery_run_id is provided, only visible candidates from that run
-        are ignored.
+        are deleted.
 
         If discovery_run_id is omitted, all currently visible candidates for the
-        authenticated user are ignored.
+        authenticated user are deleted.
 
         This action does not affect:
         - Portfolio items
         - Watchlist items
         - candidates already added to Watchlist
+        - candidates already ignored
         """
         discovery_run_id = request.data.get(
             "discovery_run_id",
@@ -481,15 +481,12 @@ class BondCandidateDiscoveryViewSet(ListModelMixin, GenericViewSet):
                 discovery_run__user=request.user,
             )
 
-        ignored_count = queryset.update(
-            status=BondCandidate.Status.IGNORED,
-            updated_at=timezone.now(),
-        )
+        deleted_count, _deleted_details = queryset.delete()
 
         return Response(
             {
                 "detail": "Current discovery results cleared.",
-                "ignored_count": ignored_count,
+                "deleted_count": deleted_count,
             },
             status=status.HTTP_200_OK,
         )
@@ -557,5 +554,3 @@ class BondCandidateDiscoveryViewSet(ListModelMixin, GenericViewSet):
             },
             status=status.HTTP_200_OK,
         )
-
-
