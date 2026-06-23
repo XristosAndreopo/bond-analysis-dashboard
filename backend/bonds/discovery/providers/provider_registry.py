@@ -5,9 +5,9 @@ This module centralizes backend discovery providers.
 
 Current data strategy:
 - CSV Provider is the only backend provider that run_bond_discovery() executes.
-- AI Research is handled by the AI research import flow, not by this registry.
-  The frontend uses Puter.js to produce structured JSON and the backend imports
-  it through /api/ai-research/import-discovery/.
+- AI Research is handled by the backend OpenAI workflow, not by this registry.
+  The frontend calls /api/ai-research/discover/ and the backend performs
+  OpenAI web research, structured JSON validation, and candidate import.
 
 Static sample discovery has been removed so Discover Bonds focuses on real
 user-provided CSV data and AI-researched candidates.

@@ -2,8 +2,8 @@
  * API functions for the Watchlist Discovery Engine.
  *
  * This file contains all frontend requests related to discovered bond
- * candidates, provider status, CSV uploads, AI research JSON imports, and
- * discovery actions.
+ * candidates, provider status, CSV uploads, OpenAI-backed AI research,
+ * structured JSON imports, and candidate actions.
  */
 
 import apiClient from "./apiClient";
@@ -42,9 +42,6 @@ export async function fetchDiscoveredBonds(params = {}) {
  * Supported backend source:
  * - csv_provider
  *
- * AI Research Provider does not call this endpoint. It generates structured
- * JSON through Puter.js and imports it through importAIResearchDiscoveryJson().
- *
  * @param {object} payload - Optional discovery filters.
  * @returns {Promise<object>} Discovery run result and visible candidates.
  */
@@ -55,13 +52,28 @@ export async function runBondDiscovery(payload = {}) {
 }
 
 /**
- * Import AI-researched discovery JSON.
+ * Run OpenAI-backed AI Research discovery.
  *
- * This endpoint does not call OpenAI from the backend. It sends already
- * structured JSON to the backend import endpoint.
+ * The frontend sends only filters. The Django backend:
+ * - calls OpenAI Responses API with web search,
+ * - requests structured JSON,
+ * - validates/imports candidates,
+ * - calculates missing YTM/duration where possible.
  *
- * The backend validates the payload and creates/updates BondCandidate records
- * with data_origin = AI_RESEARCH.
+ * @param {object} payload - AI discovery filters.
+ * @returns {Promise<object>} Discovery result and imported candidates.
+ */
+export async function runAIResearchDiscovery(payload = {}) {
+  const response = await apiClient.post("/ai-research/discover/", payload);
+
+  return response.data;
+}
+
+/**
+ * Import AI-researched discovery JSON manually.
+ *
+ * This remains available for testing or future workflows where structured JSON
+ * is produced outside the backend OpenAI discovery endpoint.
  *
  * @param {object} payload - DiscoveryResearchResult JSON.
  * @returns {Promise<object>} Import summary.

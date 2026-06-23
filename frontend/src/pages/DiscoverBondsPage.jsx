@@ -8,9 +8,9 @@
  *   2. AI Research Provider
  *
  * The frontend never invents bond data. It either uploads CSV data or asks
- * Puter.js to produce structured AI research JSON. The Django backend remains
- * responsible for validation, user ownership, duplicate checks, import, and
- * backend-calculated YTM/duration when enough verified fields exist.
+ * the Django backend to run OpenAI-backed web research. The Django backend
+ * remains responsible for validation, user ownership, duplicate checks, import,
+ * and backend-calculated YTM/duration when enough verified fields exist.
  */
 
 import { useEffect, useState } from "react";
@@ -22,13 +22,12 @@ import {
   fetchDiscoveredBonds,
   fetchDiscoveryProviderStatus,
   ignoreDiscoveredBond,
-  importAIResearchDiscoveryJson,
+  runAIResearchDiscovery,
   runBondDiscovery,
   uploadDiscoveryCsv,
 } from "../api/discoveryApi";
 import RiskBadge from "../components/RiskBadge";
 import SignalBadge from "../components/SignalBadge";
-import { generateDiscoveryResearchJson } from "../services/puterAIResearchService";
 import {
   formatDecimal,
   formatMoney,
@@ -166,9 +165,7 @@ function DiscoverBondsPage() {
   const [isLoadingProviderStatus, setIsLoadingProviderStatus] = useState(false);
   const [isRunningDiscovery, setIsRunningDiscovery] = useState(false);
   const [isUploadingCsv, setIsUploadingCsv] = useState(false);
-  const [isGeneratingAIResearchJson, setIsGeneratingAIResearchJson] =
-    useState(false);
-  const [isImportingAIResearchJson, setIsImportingAIResearchJson] =
+  const [isRunningAIResearchDiscovery, setIsRunningAIResearchDiscovery] =
     useState(false);
   const [isClearingResults, setIsClearingResults] = useState(false);
   const [candidateActionId, setCandidateActionId] = useState(null);
@@ -178,9 +175,7 @@ function DiscoverBondsPage() {
 
   const isAIResearchSource = filters.source === AI_RESEARCH_SOURCE;
   const isDiscovering =
-    isRunningDiscovery ||
-    isGeneratingAIResearchJson ||
-    isImportingAIResearchJson;
+    isRunningDiscovery || isRunningAIResearchDiscovery;
 
   useEffect(() => {
     loadProviderStatus();
@@ -374,56 +369,38 @@ function DiscoverBondsPage() {
   }
 
   async function handleAIResearchDiscovery() {
-    setIsGeneratingAIResearchJson(true);
-    setIsImportingAIResearchJson(false);
+    setIsRunningAIResearchDiscovery(true);
     setSuccessMessage("");
     setErrorMessage("");
     setLastAIResearchImport(null);
     setAIQualityWarnings([]);
 
     try {
-      const generatedPayload = await generateDiscoveryResearchJson(
-        buildAIResearchFilters()
-      );
-
-      setAIResearchJsonText(JSON.stringify(generatedPayload, null, 2));
-      setAIQualityWarnings(buildAIQualityWarnings(generatedPayload));
-
-      setIsGeneratingAIResearchJson(false);
-      setIsImportingAIResearchJson(true);
-
-      const result = await importAIResearchDiscoveryJson(generatedPayload);
+      const result = await runAIResearchDiscovery(buildAIResearchFilters());
       const importSummary = result.import_summary || null;
+      const generatedPayload = result.research_payload || null;
 
       setLastAIResearchImport(importSummary);
+      setLastDiscoveryRun(result.run || null);
+      setCandidates(Array.isArray(result.candidates) ? result.candidates : []);
 
-      if (importSummary?.discovery_run_id) {
-        setLastDiscoveryRun({
-          id: importSummary.discovery_run_id,
-          total_found: importSummary.total_found,
-          total_saved:
-            Number(importSummary.total_created || 0) +
-            Number(importSummary.total_updated || 0),
-          total_skipped: importSummary.total_skipped,
-          status: "COMPLETED",
-          status_label: "Completed",
-        });
-
-        await loadCandidates(importSummary.discovery_run_id);
+      if (generatedPayload) {
+        setAIResearchJsonText(JSON.stringify(generatedPayload, null, 2));
+        setAIQualityWarnings(buildAIQualityWarnings(generatedPayload));
       } else {
-        await loadCandidates();
+        setAIResearchJsonText("");
+        setAIQualityWarnings([]);
       }
 
       setSuccessMessage(
-        "AI Research Provider completed. The backend imported valid candidates and calculated missing YTM/duration where possible."
+        "AI Research Provider completed. The backend searched with OpenAI, imported valid candidates and calculated missing YTM/duration where possible."
       );
     } catch (error) {
       setErrorMessage(
         getApiErrorMessage(error, "Could not complete AI Research discovery.")
       );
     } finally {
-      setIsGeneratingAIResearchJson(false);
-      setIsImportingAIResearchJson(false);
+      setIsRunningAIResearchDiscovery(false);
     }
   }
 
@@ -534,8 +511,7 @@ function DiscoverBondsPage() {
 
       {isAIResearchSource ? (
         <AIResearchProviderSection
-          isGenerating={isGeneratingAIResearchJson}
-          isImporting={isImportingAIResearchJson}
+          isRunning={isRunningAIResearchDiscovery}
           generatedJsonText={aiResearchJsonText}
           qualityWarnings={aiQualityWarnings}
           lastImport={lastAIResearchImport}
@@ -561,8 +537,7 @@ function DiscoverBondsPage() {
           >
             {getDiscoveryButtonLabel({
               isAIResearchSource,
-              isGeneratingAIResearchJson,
-              isImportingAIResearchJson,
+              isRunningAIResearchDiscovery,
               isRunningDiscovery,
             })}
           </button>
@@ -921,8 +896,7 @@ function CSVProviderSection({
 }
 
 function AIResearchProviderSection({
-  isGenerating,
-  isImporting,
+  isRunning,
   generatedJsonText,
   qualityWarnings,
   lastImport,
@@ -933,8 +907,8 @@ function AIResearchProviderSection({
         <div>
           <h2>AI Research Provider</h2>
           <p>
-            Press Discovery to search the web through Puter.js, generate
-            structured JSON, import it into Django and display valid candidates.
+            Press Discovery to let the Django backend search the web through
+            OpenAI, import structured results and display valid candidates.
           </p>
         </div>
       </div>
@@ -945,11 +919,10 @@ function AIResearchProviderSection({
         market price, coupon and maturity exist.
       </div>
 
-      {(isGenerating || isImporting) && (
+      {isRunning && (
         <div className="loading-text">
-          {isGenerating
-            ? "AI Research Agent is searching for active bonds..."
-            : "Backend is validating and importing AI research results..."}
+          Backend OpenAI Research Agent is searching, validating and importing
+          active bond candidates...
         </div>
       )}
 
@@ -1249,20 +1222,15 @@ function buildAIQualityWarnings(payload) {
 
 function getDiscoveryButtonLabel({
   isAIResearchSource,
-  isGeneratingAIResearchJson,
-  isImportingAIResearchJson,
+  isRunningAIResearchDiscovery,
   isRunningDiscovery,
 }) {
   /**
    * Return the main Discovery button label.
    */
   if (isAIResearchSource) {
-    if (isGeneratingAIResearchJson) {
+    if (isRunningAIResearchDiscovery) {
       return "Searching...";
-    }
-
-    if (isImportingAIResearchJson) {
-      return "Importing...";
     }
 
     return "Discovery";

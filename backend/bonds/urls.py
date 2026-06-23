@@ -9,6 +9,7 @@ This file exposes:
 - discovery endpoints
 - CSV upload endpoint
 - provider status endpoint
+- OpenAI AI research discovery endpoint
 - AI research JSON import endpoints
 """
 
@@ -17,6 +18,7 @@ from rest_framework.routers import DefaultRouter
 
 from .ai_research.views import (
     AIResearchDiscoveryImportAPIView,
+    AIResearchDiscoveryRunAPIView,
     AIResearchMarketImportAPIView,
 )
 from .discovery.provider_status_views import DiscoveryProviderStatusAPIView
@@ -56,6 +58,11 @@ urlpatterns = [
         "discover-bonds/provider-status/",
         DiscoveryProviderStatusAPIView.as_view(),
         name="discovery-provider-status",
+    ),
+    path(
+        "ai-research/discover/",
+        AIResearchDiscoveryRunAPIView.as_view(),
+        name="ai-research-discover",
     ),
     path(
         "ai-research/import-discovery/",
