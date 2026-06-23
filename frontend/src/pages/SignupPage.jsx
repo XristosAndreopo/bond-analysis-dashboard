@@ -1,7 +1,8 @@
 /**
  * Signup page.
  *
- * Creates a new user account through the backend accounts API.
+ * Creates a new inactive user account and redirects the user to the email
+ * verification page.
  */
 
 import { useState } from "react";
@@ -23,7 +24,6 @@ function SignupPage() {
 
   const [formData, setFormData] = useState(INITIAL_FORM_DATA);
   const [errorMessage, setErrorMessage] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   function handleChange(event) {
@@ -39,19 +39,17 @@ function SignupPage() {
     event.preventDefault();
 
     setErrorMessage("");
-    setSuccessMessage("");
     setIsSubmitting(true);
 
     try {
-      await signupUser(formData);
+      const response = await signupUser(formData);
 
-      setSuccessMessage(
-        "Ο λογαριασμός δημιουργήθηκε με επιτυχία. Μπορείς τώρα να συνδεθείς."
-      );
-
-      setTimeout(() => {
-        navigate("/login");
-      }, 900);
+      navigate("/verify-email", {
+        state: {
+          email: response.email || formData.email,
+          detail: response.detail,
+        },
+      });
     } catch (error) {
       setErrorMessage(buildApiErrorMessage(error));
     } finally {
@@ -72,7 +70,8 @@ function SignupPage() {
           <h2>Start tracking bonds with structured analysis.</h2>
           <p>
             Δημιούργησε λογαριασμό για να αποθηκεύεις Portfolio, Watchlist και
-            AI-researched candidate bonds.
+            AI-researched candidate bonds. Μετά το signup θα λάβεις κωδικό
+            επιβεβαίωσης στο email σου.
           </p>
         </div>
       </section>
@@ -86,7 +85,6 @@ function SignupPage() {
           </div>
 
           {errorMessage && <div className="error-box">{errorMessage}</div>}
-          {successMessage && <div className="success-box">{successMessage}</div>}
 
           <div className="auth-two-column-grid">
             <label>
@@ -209,6 +207,8 @@ function buildApiErrorMessage(error) {
       messages.push(`${field}: ${value.join(" ")}`);
     } else if (typeof value === "string") {
       messages.push(`${field}: ${value}`);
+    } else if (value && typeof value === "object") {
+      messages.push(`${field}: ${JSON.stringify(value)}`);
     }
   });
 

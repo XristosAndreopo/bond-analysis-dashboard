@@ -1,18 +1,18 @@
 /**
  * Forgot password page.
  *
- * MVP behavior:
- * - user submits an email
- * - backend returns a generic safe response
- * - real email reset flow can be added later
+ * The user submits an email and receives a temporary reset code. The response
+ * remains generic so the app does not reveal whether the email exists.
  */
 
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import { requestPasswordReset } from "../api/authApi";
 
 function ForgotPasswordPage() {
+  const navigate = useNavigate();
+
   const [email, setEmail] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
@@ -32,6 +32,14 @@ function ForgotPasswordPage() {
         response.detail ||
           "If an account exists, password reset instructions will be sent."
       );
+
+      setTimeout(() => {
+        navigate("/reset-password", {
+          state: {
+            email,
+          },
+        });
+      }, 800);
     } catch (error) {
       setErrorMessage("Δεν ήταν δυνατή η αποστολή αιτήματος επαναφοράς.");
     } finally {
@@ -51,8 +59,8 @@ function ForgotPasswordPage() {
           <span className="auth-hero-pill">Account recovery</span>
           <h2>Reset access safely.</h2>
           <p>
-            Για λόγους ασφαλείας, η εφαρμογή δεν αποκαλύπτει αν υπάρχει ή όχι
-            λογαριασμός με το email που θα δώσεις.
+            Θα λάβεις προσωρινό 6ψήφιο κωδικό. Για λόγους ασφαλείας, η
+            εφαρμογή δεν αποκαλύπτει αν υπάρχει ή όχι λογαριασμός με το email.
           </p>
         </div>
       </section>
@@ -82,8 +90,12 @@ function ForgotPasswordPage() {
           </label>
 
           <button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? "Sending..." : "Send reset instructions"}
+            {isSubmitting ? "Sending..." : "Send reset code"}
           </button>
+
+          <p className="auth-switch-text">
+            Έχεις ήδη κωδικό; <Link to="/reset-password">Reset password</Link>
+          </p>
 
           <p className="auth-switch-text">
             Θυμήθηκες τον κωδικό; <Link to="/login">Back to login</Link>

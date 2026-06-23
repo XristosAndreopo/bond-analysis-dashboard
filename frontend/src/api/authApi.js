@@ -4,7 +4,9 @@
  * This file contains all requests related to:
  * - login
  * - signup
+ * - email verification
  * - forgot password
+ * - password reset
  * - current authenticated user retrieval
  */
 
@@ -27,13 +29,48 @@ export async function loginUser(username, password) {
 }
 
 /**
- * Register a new user account.
+ * Register a new inactive user account.
+ *
+ * The backend sends an email verification code after successful signup.
  *
  * @param {object} payload - Signup form data.
  * @returns {Promise<object>} Created account response.
  */
 export async function signupUser(payload) {
   const response = await apiClient.post("/accounts/signup/", payload);
+
+  return response.data;
+}
+
+/**
+ * Verify an email address with a temporary numeric code.
+ *
+ * @param {string} email - User email.
+ * @param {string} code - Temporary verification code.
+ * @returns {Promise<object>} Verification response.
+ */
+export async function verifyEmail(email, code) {
+  const response = await apiClient.post("/accounts/verify-email/", {
+    email,
+    code,
+  });
+
+  return response.data;
+}
+
+/**
+ * Resend an email verification code.
+ *
+ * @param {string} email - User email.
+ * @returns {Promise<object>} Generic resend response.
+ */
+export async function resendVerificationCode(email) {
+  const response = await apiClient.post(
+    "/accounts/resend-verification-code/",
+    {
+      email,
+    }
+  );
 
   return response.data;
 }
@@ -51,6 +88,18 @@ export async function requestPasswordReset(email) {
   const response = await apiClient.post("/accounts/forgot-password/", {
     email,
   });
+
+  return response.data;
+}
+
+/**
+ * Reset a user's password with a temporary numeric code.
+ *
+ * @param {object} payload - Reset password payload.
+ * @returns {Promise<object>} Reset password response.
+ */
+export async function resetPassword(payload) {
+  const response = await apiClient.post("/accounts/reset-password/", payload);
 
   return response.data;
 }

@@ -4,7 +4,10 @@ Serializers for user account data.
 This module contains serializers for:
 - current authenticated user data
 - public signup
-- forgot password request placeholder
+- email verification
+- resend verification code
+- forgot password request
+- password reset confirmation
 
 The application currently uses Django's built-in User model.
 """
@@ -32,18 +35,13 @@ class CurrentUserSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
             "full_name",
+            "is_active",
         ]
         read_only_fields = fields
 
     def get_full_name(self, obj):
         """
         Return the user's full name if available; otherwise return username.
-
-        Args:
-            obj: Django User instance.
-
-        Returns:
-            str: Full name or username.
         """
         full_name = obj.get_full_name().strip()
 
@@ -57,11 +55,8 @@ class SignupSerializer(serializers.ModelSerializer):
     """
     Serializer for public user registration.
 
-    The serializer validates:
-    - unique username
-    - unique email when email is provided
-    - password confirmation
-    - Django password strength rules
+    The user is created as inactive. The account becomes active only after
+    successful email verification with a temporary code.
     """
 
     password = serializers.CharField(
@@ -99,15 +94,6 @@ class SignupSerializer(serializers.ModelSerializer):
     def validate_username(self, value):
         """
         Validate that username is unique case-insensitively.
-
-        Args:
-            value: Submitted username.
-
-        Returns:
-            str: Cleaned username.
-
-        Raises:
-            serializers.ValidationError: If username already exists.
         """
         username = value.strip()
 
@@ -121,15 +107,6 @@ class SignupSerializer(serializers.ModelSerializer):
     def validate_email(self, value):
         """
         Validate that email is unique case-insensitively.
-
-        Args:
-            value: Submitted email.
-
-        Returns:
-            str: Normalized email.
-
-        Raises:
-            serializers.ValidationError: If email already exists.
         """
         email = value.strip().lower()
 
@@ -146,15 +123,6 @@ class SignupSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         """
         Validate matching passwords and password strength.
-
-        Args:
-            attrs: Submitted serializer data.
-
-        Returns:
-            dict: Validated data.
-
-        Raises:
-            serializers.ValidationError: If passwords do not match or are weak.
         """
         password = attrs.get("password")
         password_confirm = attrs.get("password_confirm")
@@ -170,13 +138,7 @@ class SignupSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         """
-        Create a new active Django user.
-
-        Args:
-            validated_data: Validated signup data.
-
-        Returns:
-            User: Created user instance.
+        Create a new inactive Django user.
         """
         validated_data.pop("password_confirm")
         password = validated_data.pop("password")
@@ -188,17 +150,91 @@ class SignupSerializer(serializers.ModelSerializer):
             first_name=validated_data.get("first_name", ""),
             last_name=validated_data.get("last_name", ""),
         )
+        user.is_active = False
+        user.save(update_fields=["is_active"])
 
         return user
+
+
+class EmailCodeSerializer(serializers.Serializer):
+    """
+    Base serializer for forms that submit an email and a numeric code.
+    """
+
+    email = serializers.EmailField(required=True)
+    code = serializers.CharField(
+        required=True,
+        min_length=6,
+        max_length=6,
+        trim_whitespace=True,
+    )
+
+    def validate_code(self, value):
+        """
+        Validate that code is exactly six numeric digits.
+        """
+        code = value.strip()
+
+        if not code.isdigit():
+            raise serializers.ValidationError("Code must contain only digits.")
+
+        return code
+
+
+class VerifyEmailSerializer(EmailCodeSerializer):
+    """
+    Serializer for email verification.
+    """
+
+
+class ResendVerificationCodeSerializer(serializers.Serializer):
+    """
+    Serializer for resending email verification codes.
+    """
+
+    email = serializers.EmailField(required=True)
 
 
 class ForgotPasswordRequestSerializer(serializers.Serializer):
     """
     Serializer for forgot password requests.
-
-    This MVP serializer only accepts an email address. The API response remains
-    intentionally generic so the backend does not reveal whether an account
-    exists for the submitted email.
     """
 
     email = serializers.EmailField(required=True)
+
+
+class ResetPasswordSerializer(EmailCodeSerializer):
+    """
+    Serializer for password reset confirmation.
+    """
+
+    new_password = serializers.CharField(
+        write_only=True,
+        required=True,
+        trim_whitespace=False,
+        style={"input_type": "password"},
+    )
+    new_password_confirm = serializers.CharField(
+        write_only=True,
+        required=True,
+        trim_whitespace=False,
+        style={"input_type": "password"},
+    )
+
+    def validate(self, attrs):
+        """
+        Validate matching new passwords and password strength.
+        """
+        attrs = super().validate(attrs)
+
+        new_password = attrs.get("new_password")
+        new_password_confirm = attrs.get("new_password_confirm")
+
+        if new_password != new_password_confirm:
+            raise serializers.ValidationError(
+                {"new_password_confirm": "Passwords do not match."}
+            )
+
+        validate_password(new_password)
+
+        return attrs

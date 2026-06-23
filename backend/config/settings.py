@@ -2,10 +2,11 @@
 Django settings for the Bond Analysis Dashboard project.
 
 This settings module configures the backend API for a bond analysis
-dashboard application. The backend uses Django, Django REST Framework,
-PostgreSQL, JWT authentication, and CORS support for a React frontend.
+application. The backend uses Django, Django REST Framework, PostgreSQL,
+JWT authentication, CORS support for a React frontend, and email settings for
+account verification/password reset workflows.
 
-Environment variables are loaded from a local .env file during development.
+Environment variables are loaded from backend/.env during development.
 """
 
 from datetime import timedelta
@@ -23,6 +24,38 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Load environment variables from backend/.env
 load_dotenv(BASE_DIR / ".env")
+
+
+# ---------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------
+
+
+def env_bool(name, default=False):
+    """
+    Read a boolean environment variable safely.
+    """
+    raw_value = os.getenv(name)
+
+    if raw_value is None:
+        return default
+
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def env_int(name, default):
+    """
+    Read an integer environment variable safely.
+    """
+    raw_value = os.getenv(name)
+
+    if raw_value is None:
+        return default
+
+    try:
+        return int(raw_value)
+    except ValueError:
+        return default
 
 
 # ---------------------------------------------------------------------
@@ -219,3 +252,36 @@ CORS_ALLOWED_ORIGINS = os.getenv(
     "CORS_ALLOWED_ORIGINS",
     "http://localhost:5173,http://127.0.0.1:5173",
 ).split(",")
+
+
+# ---------------------------------------------------------------------
+# Email configuration
+# ---------------------------------------------------------------------
+
+EMAIL_BACKEND = os.getenv(
+    "DJANGO_EMAIL_BACKEND",
+    "django.core.mail.backends.console.EmailBackend",
+)
+EMAIL_HOST = os.getenv("EMAIL_HOST", "")
+EMAIL_PORT = env_int("EMAIL_PORT", 587)
+EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+DEFAULT_FROM_EMAIL = os.getenv(
+    "DEFAULT_FROM_EMAIL",
+    "no-reply@bond-analysis-dashboard.local",
+)
+
+
+# ---------------------------------------------------------------------
+# Account security code configuration
+# ---------------------------------------------------------------------
+
+ACCOUNT_SECURITY_CODE_EXPIRY_MINUTES = env_int(
+    "ACCOUNT_SECURITY_CODE_EXPIRY_MINUTES",
+    15,
+)
+ACCOUNT_SECURITY_CODE_MAX_ATTEMPTS = env_int(
+    "ACCOUNT_SECURITY_CODE_MAX_ATTEMPTS",
+    5,
+)

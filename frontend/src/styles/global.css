@@ -1967,3 +1967,29 @@ input[type="file"]::-webkit-file-upload-button:hover {
     border-radius: 22px;
   }
 }
+
+/* ------------------------------------------------------------------
+ * 16. Auth verification/reset refinements
+ * ------------------------------------------------------------------ */
+
+.auth-code-input {
+  text-align: center;
+  font-size: 1.35rem;
+  font-weight: 950;
+  letter-spacing: 0.35em;
+}
+
+.auth-secondary-button {
+  border: 1px solid var(--color-border) !important;
+  background: #ffffff !important;
+  color: var(--color-text) !important;
+}
+
+.auth-secondary-button:hover {
+  background: #f8fafc !important;
+}
+
+.auth-secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}

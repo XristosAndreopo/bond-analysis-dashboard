@@ -5,7 +5,9 @@
  * - Dashboard preview
  * - Login
  * - Signup
+ * - Verify email
  * - Forgot password
+ * - Reset password
  *
  * Protected pages:
  * - Portfolio
@@ -28,7 +30,9 @@ import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import FXRatesPage from "./pages/FXRatesPage";
 import LoginPage from "./pages/LoginPage";
 import PortfolioPage from "./pages/PortfolioPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 import SignupPage from "./pages/SignupPage";
+import VerifyEmailPage from "./pages/VerifyEmailPage";
 import WatchlistPage from "./pages/WatchlistPage";
 
 /**
@@ -59,7 +63,9 @@ function App() {
       <Route path="/dashboard" element={<DashboardRoute />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
+      <Route path="/verify-email" element={<VerifyEmailPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
 
       <Route
         path="/"
