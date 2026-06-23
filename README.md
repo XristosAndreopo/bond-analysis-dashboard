@@ -1,1568 +1,921 @@
-\# Bond Analysis Dashboard
+# 📊 Bond Analysis Dashboard
 
+![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge\&logo=python\&logoColor=white)
+![Django](https://img.shields.io/badge/Django-REST%20Framework-092E20?style=for-the-badge\&logo=django\&logoColor=white)
+![React](https://img.shields.io/badge/React-Vite-61DAFB?style=for-the-badge\&logo=react\&logoColor=black)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Database-4169E1?style=for-the-badge\&logo=postgresql\&logoColor=white)
+![OpenAI](https://img.shields.io/badge/OpenAI-AI%20Research-412991?style=for-the-badge\&logo=openai\&logoColor=white)
+![JWT](https://img.shields.io/badge/Auth-JWT-orange?style=for-the-badge)
 
+A full-stack bond analysis platform for monitoring, researching, and evaluating bonds through a modern Portfolio and Watchlist dashboard.
 
-Bond Analysis Dashboard is a full-stack web application for monitoring, analyzing, and evaluating bonds in a personal Portfolio and Watchlist. The application is designed for educational and analytical purposes and does not provide investment advice or buy/sell recommendations.
+The application combines traditional bond analytics, user-specific portfolio management, FX-aware calculations, email-secured authentication, and AI-assisted public web research for bond discovery and market data refresh.
 
+> ⚠️ **Disclaimer:** This application is for educational and analytical purposes only.
+> It does not provide investment advice, financial advice, legal advice, tax advice, or buy/sell recommendations.
 
+---
 
-The system allows users to create an account, verify their email, manage bonds, monitor market data, run backend-calculated financial analytics, refresh bond market data through AI-assisted public web research, and review risk/signal indications.
+## ✨ Overview
 
+**Bond Analysis Dashboard** helps users organize and evaluate bonds through two main areas:
 
+* **Portfolio** — bonds the user already owns.
+* **Watchlist** — bonds the user monitors before buying.
 
-\---
+The app calculates risk indicators, yield metrics, portfolio-level analytics, FX-aware values, stress-test scenarios, and AI-researched market refreshes. It also supports an AI discovery workflow that can search for bond candidates and import structured results for review.
 
+AI-researched data is always stored with transparency metadata, including source URL, retrieval timestamp, confidence level, review status, missing fields, and raw research payload.
 
+---
 
-\## Disclaimer
+## 📌 Table of Contents
 
+* [Core Features](#-core-features)
+* [Technology Stack](#-technology-stack)
+* [Application Architecture](#-application-architecture)
+* [Main Modules](#-main-modules)
+* [AI Research Workflow](#-ai-research-workflow)
+* [Market Data Transparency](#-market-data-transparency)
+* [Project Structure](#-project-structure)
+* [Installation Guide](#-installation-guide)
+* [Environment Variables](#-environment-variables)
+* [Running the Application](#-running-the-application)
+* [Useful Commands](#-useful-commands)
+* [Security Notes](#-security-notes)
+* [Known Limitations](#-known-limitations)
+* [Future Improvements](#-future-improvements)
 
+---
 
-This application is for educational and analytical use only.
+## 🚀 Core Features
 
+### 🔐 Authentication & Account Security
 
+* User signup.
+* Email verification with temporary verification code.
+* Login with JWT authentication.
+* Forgot password flow.
+* Password reset using a temporary code.
+* Protected private routes.
+* Public dashboard preview for non-authenticated users.
 
-It does not provide financial, investment, legal, tax, or trading advice. Any buy/sell signals, risk indicators, yield calculations, price refreshes, or AI-researched market data must be reviewed manually before being used for any real-world investment decision.
+---
 
+### 🏠 Dashboard
 
+* Portfolio summary.
+* Bond count.
+* Risk overview.
+* Signal overview.
+* Public preview mode for guests.
+* Private dashboard for authenticated users.
 
-AI-researched market data is not treated as an official live market feed. All AI-imported records keep transparency metadata such as source URL, retrieved timestamp, confidence level, review status, missing fields, and raw research payload.
+---
 
+### 💼 Portfolio
 
+The Portfolio section is designed for bonds already owned by the user.
 
-\---
+Key features:
 
+* Add bonds to Portfolio.
+* Store quantity and purchase price.
+* Calculate current position value.
+* Calculate total portfolio value.
+* Calculate weighted average YTM.
+* Calculate weighted current yield.
+* Calculate weighted modified duration.
+* Calculate weighted risk score.
+* Calculate currency exposure.
+* Estimate annual coupon income.
+* Run interest rate stress tests.
+* Show risk and signal indicators.
+* Refresh Portfolio market data through AI-assisted public web research.
 
+---
 
-\## Main Features
+### 👀 Watchlist
 
+The Watchlist section is designed for bonds the user is monitoring before buying.
 
+Key features:
 
-\### Authentication and Account Security
+* Add bonds to Watchlist.
+* Monitor current market price.
+* Monitor YTM and effective discount rate.
+* View FX-aware converted price.
+* View backend-calculated risk level.
+* View backend-calculated signal.
+* Refresh Watchlist market data through AI-assisted public web research.
+* Display source, last update, confidence, and review status.
 
+---
 
+### 🔎 Discover Bonds
 
-\* User signup.
+The Discover Bonds section helps users find candidate bonds.
 
-\* JWT-based login.
+Supported discovery flows:
 
-\* Email verification with temporary verification code.
+* CSV-based discovery/import.
+* OpenAI-backed AI discovery.
+* Structured JSON import.
+* Candidate review before adding to Watchlist.
+* Exclusion of bonds already existing in Portfolio or Watchlist.
+* Candidate-level preview risk and signal.
 
-\* Forgot password flow.
+---
 
-\* Password reset with temporary code.
+### 🌍 FX Rates
 
-\* Public dashboard preview for unauthenticated users.
+* FX-aware Portfolio calculations.
+* FX-aware Watchlist calculations.
+* Base currency selection.
+* Missing FX rate warnings.
+* Central FX rate management.
 
-\* Protected Portfolio, Watchlist, Discover Bonds, FX Rates, and Position pages.
+---
 
+### 🤖 AI-Assisted Market Research
 
+The application supports AI-assisted research for:
 
-\### Dashboard
+* Bond discovery.
+* Watchlist market refresh.
+* Portfolio market refresh.
+* Manual structured JSON import.
 
+AI research is performed through the backend. The frontend never directly calls OpenAI.
 
+---
 
-\* Authenticated user dashboard.
+## 🧰 Technology Stack
 
-\* Portfolio summary.
+### Backend
 
-\* Bond count.
+| Technology            | Purpose                               |
+| --------------------- | ------------------------------------- |
+| Python                | Backend programming language          |
+| Django                | Main backend framework                |
+| Django REST Framework | API layer                             |
+| PostgreSQL            | Relational database                   |
+| Simple JWT            | Token-based authentication            |
+| Django ORM            | Database models and queries           |
+| Django Email Backend  | Email verification and password reset |
+| OpenAI Responses API  | AI-assisted bond research             |
+| Decimal               | Financial precision calculations      |
 
-\* Portfolio value summary.
+---
 
-\* Risk and signal overview.
+### Frontend
 
-\* Public preview dashboard when the user is not logged in.
+| Technology   | Purpose             |
+| ------------ | ------------------- |
+| React        | Frontend framework  |
+| Vite         | Frontend build tool |
+| React Router | Client-side routing |
+| Axios        | API client          |
+| CSS          | Styling             |
+| LocalStorage | JWT token storage   |
 
+---
 
+### AI & Data
 
-\### Portfolio
+| Component              | Purpose                           |
+| ---------------------- | --------------------------------- |
+| OpenAI Responses API   | AI research and structured output |
+| Web Search Tool        | Public web data research          |
+| JSON Schema            | Structured AI response validation |
+| Backend Import Service | Safe database import              |
+| Source Metadata        | Transparency and review tracking  |
 
+---
 
-
-\* Add bonds to Portfolio.
-
-\* Store user-specific bond positions.
-
-\* Quantity and purchase price tracking.
-
-\* Backend-calculated portfolio analytics.
-
-\* FX-aware portfolio value conversion.
-
-\* Weighted average YTM.
-
-\* Weighted current yield.
-
-\* Weighted modified duration.
-
-\* Weighted risk score.
-
-\* Currency exposure.
-
-\* Estimated annual coupon income.
-
-\* Interest rate stress test.
-
-\* Per-bond risk and signal analysis.
-
-\* AI-assisted market price refresh for Portfolio bonds.
-
-
-
-\### Watchlist
-
-
-
-\* Add bonds to Watchlist before buying.
-
-\* Monitor bonds without owning them.
-
-\* Backend-calculated Watchlist analytics.
-
-\* FX-aware market price conversion.
-
-\* Risk and signal analysis.
-
-\* AI-assisted market price refresh for Watchlist bonds.
-
-\* Source, last updated, confidence, and review status metadata.
-
-
-
-\### Discover Bonds
-
-
-
-\* Discovery page for finding bond candidates.
-
-\* CSV-based discovery/import support.
-
-\* OpenAI-backed AI discovery workflow.
-
-\* AI-researched bond candidate import.
-
-\* Candidate review before adding to Watchlist.
-
-\* Existing Portfolio/Watchlist bonds are excluded from visible discovery candidates.
-
-
-
-\### AI Market Research
-
-
-
-The application supports AI-assisted public web research for:
-
-
-
-\* Bond discovery.
-
-\* Watchlist market data refresh.
-
-\* Portfolio market data refresh.
-
-\* Structured JSON import.
-
-\* Source tracking.
-
-\* Confidence tracking.
-
-\* Review status tracking.
-
-\* Missing field tracking.
-
-\* Raw research payload storage.
-
-
-
-Important AI research rules:
-
-
-
-\* The AI must not invent values.
-
-\* Missing values must remain null.
-
-\* Every researched item must include at least one source URL.
-
-\* AI-researched data is marked as needing review unless strongly verified.
-
-\* The backend validates the structured JSON before importing it.
-
-\* Market refresh data uses a stable internal source and daily quote date to avoid duplicate daily records.
-
-
-
-\### FX Rates
-
-
-
-\* Manual or central FX rate management.
-
-\* FX-aware Portfolio and Watchlist calculations.
-
-\* Base currency selection.
-
-\* Missing FX warning handling.
-
-
-
-\---
-
-
-
-\## Technology Stack
-
-
-
-\### Backend
-
-
-
-\* Python
-
-\* Django
-
-\* Django REST Framework
-
-\* PostgreSQL
-
-\* Simple JWT authentication
-
-\* Django email backend / SMTP email support
-
-\* OpenAI Responses API for AI-assisted research
-
-\* Django ORM
-
-\* Decimal-based financial calculations
-
-\* Django migrations
-
-
-
-\### Frontend
-
-
-
-\* React
-
-\* Vite
-
-\* React Router
-
-\* Axios
-
-\* CSS
-
-\* Component-based UI structure
-
-
-
-\### Database
-
-
-
-\* PostgreSQL for local and production-ready development.
-
-\* Django migrations for schema management.
-
-
-
-\### AI Integration
-
-
-
-\* OpenAI Responses API.
-
-\* Web search tool integration.
-
-\* Structured JSON schema validation.
-
-\* Backend import validation before database write.
-
-
-
-\### Email
-
-
-
-\* Development option: Django console email backend.
-
-\* Real email option: Gmail SMTP or another SMTP provider.
-
-\* Gmail App Password is recommended when using Gmail SMTP.
-
-
-
-\---
-
-
-
-\## Project Structure
-
-
+## 🏗 Application Architecture
 
 ```text
-
-bond-analysis-dashboard/
-
-├── backend/
-
-│   ├── accounts/
-
-│   ├── analytics/
-
-│   ├── bonds/
-
-│   │   ├── ai\_research/
-
-│   │   ├── analytics/
-
-│   │   ├── discovery/
-
-│   │   └── ...
-
-│   ├── config/
-
-│   ├── portfolios/
-
-│   ├── manage.py
-
-│   ├── requirements.txt
-
-│   └── .env.example
-
-│
-
-├── frontend/
-
-│   ├── src/
-
-│   │   ├── api/
-
-│   │   ├── auth/
-
-│   │   ├── components/
-
-│   │   ├── layouts/
-
-│   │   ├── pages/
-
-│   │   ├── routes/
-
-│   │   ├── styles/
-
-│   │   └── utils/
-
-│   ├── package.json
-
-│   └── vite.config.js
-
-│
-
-├── .gitignore
-
-└── README.md
-
+┌──────────────────────────────┐
+│          React Frontend       │
+│  Dashboard / Portfolio / UI   │
+└───────────────┬──────────────┘
+                │
+                │ Axios + JWT
+                ▼
+┌──────────────────────────────┐
+│       Django REST API         │
+│ Auth / Bonds / Portfolio      │
+└───────────────┬──────────────┘
+                │
+                │ Django ORM
+                ▼
+┌──────────────────────────────┐
+│          PostgreSQL           │
+│ Bonds / Market Data / Users   │
+└───────────────┬──────────────┘
+                │
+                │ Backend-only AI calls
+                ▼
+┌──────────────────────────────┐
+│       OpenAI Responses API    │
+│  Web Search + Structured JSON │
+└──────────────────────────────┘
 ```
 
+---
 
-
-\---
-
-
-
-\## Prerequisites
-
-
-
-Before installing the application, make sure you have:
-
-
-
-\* Python 3.11 or newer
-
-\* Node.js 18 or newer
-
-\* npm
-
-\* PostgreSQL
-
-\* Git
-
-\* OpenAI API key
-
-\* Gmail App Password or SMTP credentials, if real email sending is required
-
-
-
-\---
-
-
-
-\## Installation Guide
-
-
-
-The following instructions assume Windows PowerShell and the project path:
-
-
-
-```powershell
-
-C:\\Users\\xrist\\Desktop\\bond-analysis-dashboard
-
-```
-
-
-
-\---
-
-
-
-\## 1. Clone the Repository
-
-
-
-```powershell
-
-cd C:\\Users\\xrist\\Desktop
-
-
-
-git clone https://github.com/XristosAndreopo/bond-analysis-dashboard.git
-
-
-
-cd C:\\Users\\xrist\\Desktop\\bond-analysis-dashboard
-
-```
-
-
-
-\---
-
-
-
-\## 2. Backend Setup
-
-
-
-Go to the backend folder:
-
-
-
-```powershell
-
-cd C:\\Users\\xrist\\Desktop\\bond-analysis-dashboard\\backend
-
-```
-
-
-
-Create a virtual environment:
-
-
-
-```powershell
-
-python -m venv .venv
-
-```
-
-
-
-Activate it:
-
-
-
-```powershell
-
-.\\.venv\\Scripts\\activate
-
-```
-
-
-
-Install Python dependencies:
-
-
-
-```powershell
-
-pip install -r requirements.txt
-
-```
-
-
-
-\---
-
-
-
-\## 3. PostgreSQL Database Setup
-
-
-
-Open PostgreSQL shell:
-
-
-
-```powershell
-
-\& "C:\\Program Files\\PostgreSQL\\18\\bin\\psql.exe" -U postgres
-
-```
-
-
-
-Create the database:
-
-
-
-```sql
-
-CREATE DATABASE bond\_analysis\_db;
-
-```
-
-
-
-Exit PostgreSQL:
-
-
-
-```sql
-
-\\q
-
-```
-
-
-
-\---
-
-
-
-\## 4. Backend Environment File
-
-
-
-Create:
-
-
+## 🧩 Main Modules
 
 ```text
+backend/
+├── accounts/        # Signup, email verification, password reset, current user
+├── analytics/       # Portfolio analytics, watchlist analytics, stress tests
+├── bonds/           # Bond models, market data, FX rates, discovery, AI research
+├── config/          # Django settings and root URLs
+├── portfolios/      # User Portfolio and Watchlist models/views/serializers
+└── manage.py
 
-backend/.env
-
+frontend/
+├── src/api/         # Axios API functions
+├── src/auth/        # Token and user storage helpers
+├── src/components/  # Shared UI components
+├── src/layouts/     # App layout and sidebar
+├── src/pages/       # Dashboard, Portfolio, Watchlist, Auth pages
+├── src/routes/      # Protected route logic
+├── src/styles/      # Global styles
+└── src/utils/       # Formatters and helpers
 ```
 
+---
 
+## 🤖 AI Research Workflow
 
-You can copy from:
-
-
+### 1. AI Discovery
 
 ```text
-
-backend/.env.example
-
+User clicks Discover
+→ Frontend sends filters to Django
+→ Django builds strict AI prompt
+→ OpenAI searches public web sources
+→ OpenAI returns structured JSON
+→ Django validates JSON
+→ Django imports valid BondCandidate rows
+→ User reviews candidates
+→ User adds selected bond to Watchlist
 ```
 
+---
 
-
-Example `.env`:
-
-
-
-```env
-
-\# ------------------------------------------------------------------
-
-\# Django core settings
-
-\# ------------------------------------------------------------------
-
-
-
-DJANGO\_SECRET\_KEY=change-this-development-secret-key
-
-DJANGO\_DEBUG=True
-
-DJANGO\_ALLOWED\_HOSTS=localhost,127.0.0.1
-
-
-
-\# ------------------------------------------------------------------
-
-\# PostgreSQL database
-
-\# ------------------------------------------------------------------
-
-
-
-POSTGRES\_DB=bond\_analysis\_db
-
-POSTGRES\_USER=postgres
-
-POSTGRES\_PASSWORD=your-postgres-password
-
-POSTGRES\_HOST=localhost
-
-POSTGRES\_PORT=5432
-
-
-
-\# ------------------------------------------------------------------
-
-\# CORS
-
-\# ------------------------------------------------------------------
-
-
-
-CORS\_ALLOWED\_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
-
-
-
-\# ------------------------------------------------------------------
-
-\# OpenAI API
-
-\# ------------------------------------------------------------------
-
-
-
-OPENAI\_API\_KEY=your-openai-api-key
-
-OPENAI\_MODEL=gpt-5.5
-
-OPENAI\_WEB\_SEARCH\_CONTEXT\_SIZE=low
-
-OPENAI\_MAX\_OUTPUT\_TOKENS=8000
-
-OPENAI\_REASONING\_EFFORT=low
-
-
-
-\# ------------------------------------------------------------------
-
-\# Email settings
-
-\# ------------------------------------------------------------------
-
-
-
-DJANGO\_EMAIL\_BACKEND=django.core.mail.backends.smtp.EmailBackend
-
-EMAIL\_HOST=smtp.gmail.com
-
-EMAIL\_PORT=587
-
-EMAIL\_USE\_TLS=True
-
-EMAIL\_USE\_SSL=False
-
-EMAIL\_HOST\_USER=your-email@gmail.com
-
-EMAIL\_HOST\_PASSWORD=your-gmail-app-password-without-spaces
-
-DEFAULT\_FROM\_EMAIL=your-email@gmail.com
-
-
-
-\# ------------------------------------------------------------------
-
-\# Account security codes
-
-\# ------------------------------------------------------------------
-
-
-
-ACCOUNT\_SECURITY\_CODE\_EXPIRY\_MINUTES=15
-
-ACCOUNT\_SECURITY\_CODE\_MAX\_ATTEMPTS=5
-
-```
-
-
-
-Important:
-
-
-
-Do not commit `backend/.env`.
-
-
-
-Use `backend/.env.example` for safe placeholder values.
-
-
-
-\---
-
-
-
-\## 5. Email Configuration
-
-
-
-\### Development Email Option
-
-
-
-For local testing without sending real emails:
-
-
-
-```env
-
-DJANGO\_EMAIL\_BACKEND=django.core.mail.backends.console.EmailBackend
-
-DEFAULT\_FROM\_EMAIL=no-reply@bond-analysis-dashboard.local
-
-```
-
-
-
-With this option, verification and reset codes appear in the Django terminal.
-
-
-
-\### Real Gmail SMTP Option
-
-
-
-For real emails:
-
-
-
-```env
-
-DJANGO\_EMAIL\_BACKEND=django.core.mail.backends.smtp.EmailBackend
-
-EMAIL\_HOST=smtp.gmail.com
-
-EMAIL\_PORT=587
-
-EMAIL\_USE\_TLS=True
-
-EMAIL\_USE\_SSL=False
-
-EMAIL\_HOST\_USER=your-email@gmail.com
-
-EMAIL\_HOST\_PASSWORD=your-gmail-app-password-without-spaces
-
-DEFAULT\_FROM\_EMAIL=your-email@gmail.com
-
-```
-
-
-
-For Gmail, use a Google App Password, not the normal Gmail password.
-
-
-
-\---
-
-
-
-\## 6. Run Backend Migrations
-
-
-
-From the backend folder:
-
-
-
-```powershell
-
-cd C:\\Users\\xrist\\Desktop\\bond-analysis-dashboard\\backend
-
-
-
-python manage.py makemigrations
-
-python manage.py migrate
-
-```
-
-
-
-Create an admin user:
-
-
-
-```powershell
-
-python manage.py createsuperuser
-
-```
-
-
-
-Run backend checks:
-
-
-
-```powershell
-
-python manage.py check
-
-python -m compileall accounts bonds portfolios analytics
-
-```
-
-
-
-Start the backend server:
-
-
-
-```powershell
-
-python manage.py runserver
-
-```
-
-
-
-Backend URL:
-
-
+### 2. Watchlist Market Refresh
 
 ```text
-
-http://127.0.0.1:8000
-
+User clicks Update Prices in Watchlist
+→ Django collects active Watchlist ISINs
+→ OpenAI researches market data
+→ Django validates structured JSON
+→ Django creates/updates BondMarketData
+→ Watchlist reloads
+→ Risk/signal values refresh
 ```
 
+---
 
-
-API base URL:
-
-
+### 3. Portfolio Market Refresh
 
 ```text
-
-http://127.0.0.1:8000/api
-
+User clicks Update Prices in Portfolio
+→ Django collects active Portfolio ISINs
+→ OpenAI researches market data
+→ Django validates structured JSON
+→ Django creates/updates BondMarketData
+→ Portfolio reloads
+→ Portfolio value, risk, signal, stress test refresh
 ```
 
+---
 
+## 🧾 Market Data Transparency
 
-\---
-
-
-
-\## 7. Frontend Setup
-
-
-
-Open a second PowerShell window.
-
-
-
-Go to the frontend folder:
-
-
-
-```powershell
-
-cd C:\\Users\\xrist\\Desktop\\bond-analysis-dashboard\\frontend
-
-```
-
-
-
-Install dependencies:
-
-
-
-```powershell
-
-npm install
-
-```
-
-
-
-Run build check:
-
-
-
-```powershell
-
-npm run build
-
-```
-
-
-
-Start the frontend development server:
-
-
-
-```powershell
-
-npm run dev
-
-```
-
-
-
-Frontend URL:
-
-
-
-```text
-
-http://localhost:5173
-
-```
-
-
-
-\---
-
-
-
-\## 8. Main Application URLs
-
-
-
-Frontend routes:
-
-
-
-```text
-
-/dashboard
-
-/login
-
-/signup
-
-/verify-email
-
-/forgot-password
-
-/reset-password
-
-/portfolio
-
-/watchlist
-
-/discover-bonds
-
-/fx-rates
-
-/positions/new
-
-/positions/:positionId
-
-```
-
-
-
-Backend API routes include:
-
-
-
-```text
-
-/api/auth/token/
-
-/api/auth/token/refresh/
-
-/api/accounts/signup/
-
-/api/accounts/verify-email/
-
-/api/accounts/resend-verification-code/
-
-/api/accounts/forgot-password/
-
-/api/accounts/reset-password/
-
-/api/accounts/me/
-
-
-
-/api/dashboard/
-
-/api/portfolio/
-
-/api/watchlist/
-
-/api/positions/<id>/
-
-
-
-/api/ai-research/discover/
-
-/api/ai-research/watchlist-market-refresh/
-
-/api/ai-research/portfolio-market-refresh/
-
-/api/ai-research/import-discovery/
-
-/api/ai-research/import-market/
-
-
-
-/api/discover-bonds/
-
-/api/discover-bonds/run/
-
-/api/discover-bonds/upload-csv/
-
-/api/discover-bonds/provider-status/
-
-
-
-/api/fx-rates/
-
-/api/fx-rates/update/
-
-```
-
-
-
-\---
-
-
-
-\## 9. Typical User Flow
-
-
-
-\### Account Flow
-
-
-
-```text
-
-/signup
-
-→ user creates account
-
-→ verification code is sent by email
-
-→ /verify-email
-
-→ user verifies account
-
-→ /login
-
-→ user logs in
-
-```
-
-
-
-\### Forgot Password Flow
-
-
-
-```text
-
-/forgot-password
-
-→ user enters email
-
-→ reset code is sent by email
-
-→ /reset-password
-
-→ user enters email, code, new password and confirmation
-
-→ /login
-
-```
-
-
-
-\### Portfolio Flow
-
-
-
-```text
-
-/portfolio
-
-→ add bond to Portfolio
-
-→ update market prices
-
-→ review portfolio analytics
-
-→ review risk/signal indications
-
-→ review stress test
-
-```
-
-
-
-\### Watchlist Flow
-
-
-
-```text
-
-/watchlist
-
-→ add bond to Watchlist
-
-→ update market prices
-
-→ review market data and risk/signal indications
-
-→ move bond to Portfolio if needed
-
-```
-
-
-
-\### Discovery Flow
-
-
-
-```text
-
-/discover-bonds
-
-→ run AI discovery or CSV discovery
-
-→ review candidate bonds
-
-→ add selected bond to Watchlist
-
-```
-
-
-
-\---
-
-
-
-\## 10. AI Market Refresh Behavior
-
-
-
-The application supports AI-assisted market refresh for:
-
-
-
-```text
-
-Watchlist
-
-Portfolio
-
-```
-
-
-
-Market refresh behavior:
-
-
-
-\* The backend collects active ISINs from the authenticated user's Portfolio or Watchlist.
-
-\* The backend sends a structured market research request to OpenAI.
-
-\* OpenAI uses public web search.
-
-\* The response must follow the backend JSON schema.
-
-\* The backend validates and imports the result.
-
-\* New `BondMarketData` records are created or existing daily AI records are updated.
-
-\* The frontend reloads the Portfolio or Watchlist page.
-
-
-
-To avoid duplicate daily records, AI market refresh records use:
-
-
-
-```text
-
-source = ai\_research\_agent
-
-quote\_date = current local date
-
-```
-
-
-
-The original AI-reported source name and quote date are preserved inside:
-
-
-
-```text
-
-research\_payload
-
-source\_url
-
-notes
-
-```
-
-
-
-\---
-
-
-
-\## 11. Market Data Transparency
-
-
+AI-researched market data is **not** treated as an official live market feed.
 
 Every AI-researched market record stores:
 
+```text
+source
+source_url
+retrieved_at
+confidence
+needs_review
+review_status
+missing_fields
+research_payload
+notes
+```
 
+This allows the user to see:
+
+* Where the data came from.
+* When it was retrieved.
+* Whether the data needs review.
+* Which fields were missing.
+* Whether values were calculated or carried forward.
+* Whether a public source was delayed, indicative, or incomplete.
+
+---
+
+## 🛡 AI Data Safety Rules
+
+The AI research workflow follows strict rules:
+
+* Do not invent ISINs.
+* Do not invent prices.
+* Do not invent yields.
+* Do not invent ratings.
+* Do not invent maturities.
+* Do not invent source URLs.
+* Missing values must remain `null`.
+* Every item must include at least one source URL.
+* AI-researched records are marked as `NEEDS_REVIEW`.
+* Backend validates all AI output before database import.
+
+---
+
+## 📁 Project Structure
 
 ```text
-
-source
-
-source\_url
-
-retrieved\_at
-
-confidence
-
-needs\_review
-
-review\_status
-
-missing\_fields
-
-research\_payload
-
-notes
-
+bond-analysis-dashboard/
+├── backend/
+│   ├── accounts/
+│   ├── analytics/
+│   ├── bonds/
+│   │   ├── ai_research/
+│   │   ├── analytics/
+│   │   ├── discovery/
+│   │   └── ...
+│   ├── config/
+│   ├── portfolios/
+│   ├── manage.py
+│   ├── requirements.txt
+│   └── .env.example
+│
+├── frontend/
+│   ├── src/
+│   │   ├── api/
+│   │   ├── auth/
+│   │   ├── components/
+│   │   ├── layouts/
+│   │   ├── pages/
+│   │   ├── routes/
+│   │   ├── styles/
+│   │   └── utils/
+│   ├── package.json
+│   └── vite.config.js
+│
+├── .gitignore
+└── README.md
 ```
 
+---
 
+## ✅ Prerequisites
 
-This is important because public bond data may be:
+Before installing the app, make sure you have:
 
+* Python 3.11+
+* Node.js 18+
+* npm
+* PostgreSQL
+* Git
+* OpenAI API key
+* Gmail App Password or SMTP credentials, if real email sending is required
 
+---
 
-\* Delayed
+# ⚙️ Installation Guide
 
-\* Indicative
+The following instructions assume Windows PowerShell.
 
-\* Broker-provided
-
-\* Based on public snippets
-
-\* Missing bid/ask
-
-\* Missing YTM
-
-\* Missing quote timestamp
-
-\* Not an executable live institutional quote
-
-
-
-\---
-
-
-
-\## 12. Running Tests and Checks
-
-
-
-Backend checks:
-
-
+Default project path:
 
 ```powershell
-
-cd C:\\Users\\xrist\\Desktop\\bond-analysis-dashboard\\backend
-
-
-
-python manage.py check
-
-python -m compileall accounts bonds portfolios analytics
-
+C:\Users\xrist\Desktop\bond-analysis-dashboard
 ```
 
+---
 
+## 1. Clone the Repository
+
+```powershell
+cd C:\Users\xrist\Desktop
+
+git clone https://github.com/XristosAndreopo/bond-analysis-dashboard.git
+
+cd C:\Users\xrist\Desktop\bond-analysis-dashboard
+```
+
+---
+
+## 2. Backend Setup
+
+Go to the backend folder:
+
+```powershell
+cd C:\Users\xrist\Desktop\bond-analysis-dashboard\backend
+```
+
+Create virtual environment:
+
+```powershell
+python -m venv .venv
+```
+
+Activate virtual environment:
+
+```powershell
+.\.venv\Scripts\activate
+```
+
+Install dependencies:
+
+```powershell
+pip install -r requirements.txt
+```
+
+---
+
+## 3. PostgreSQL Setup
+
+Open PostgreSQL shell:
+
+```powershell
+& "C:\Program Files\PostgreSQL\18\bin\psql.exe" -U postgres
+```
+
+Create database:
+
+```sql
+CREATE DATABASE bond_analysis_db;
+```
+
+Exit PostgreSQL:
+
+```sql
+\q
+```
+
+---
+
+## 4. Backend Environment File
+
+Create:
+
+```text
+backend/.env
+```
+
+You can copy the safe template from:
+
+```text
+backend/.env.example
+```
+
+Example:
+
+```env
+# ------------------------------------------------------------------
+# Django core settings
+# ------------------------------------------------------------------
+
+DJANGO_SECRET_KEY=change-this-development-secret-key
+DJANGO_DEBUG=True
+DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1
+
+# ------------------------------------------------------------------
+# PostgreSQL database
+# ------------------------------------------------------------------
+
+POSTGRES_DB=bond_analysis_db
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=your-postgres-password
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+
+# ------------------------------------------------------------------
+# CORS
+# ------------------------------------------------------------------
+
+CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+
+# ------------------------------------------------------------------
+# OpenAI API
+# ------------------------------------------------------------------
+
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_MODEL=gpt-5.5
+OPENAI_WEB_SEARCH_CONTEXT_SIZE=low
+OPENAI_MAX_OUTPUT_TOKENS=8000
+OPENAI_REASONING_EFFORT=low
+
+# ------------------------------------------------------------------
+# Email settings
+# ------------------------------------------------------------------
+
+DJANGO_EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USE_TLS=True
+EMAIL_USE_SSL=False
+EMAIL_HOST_USER=your-email@gmail.com
+EMAIL_HOST_PASSWORD=your-gmail-app-password-without-spaces
+DEFAULT_FROM_EMAIL=your-email@gmail.com
+
+# ------------------------------------------------------------------
+# Account security codes
+# ------------------------------------------------------------------
+
+ACCOUNT_SECURITY_CODE_EXPIRY_MINUTES=15
+ACCOUNT_SECURITY_CODE_MAX_ATTEMPTS=5
+```
+
+---
+
+## 5. Email Configuration
+
+### Console Email for Development
+
+Use this when you only want verification/reset codes to appear in the Django terminal:
+
+```env
+DJANGO_EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
+DEFAULT_FROM_EMAIL=no-reply@bond-analysis-dashboard.local
+```
+
+---
+
+### Real Gmail SMTP
+
+Use this when you want real email delivery:
+
+```env
+DJANGO_EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USE_TLS=True
+EMAIL_USE_SSL=False
+EMAIL_HOST_USER=your-email@gmail.com
+EMAIL_HOST_PASSWORD=your-gmail-app-password-without-spaces
+DEFAULT_FROM_EMAIL=your-email@gmail.com
+```
+
+> For Gmail, use a Google App Password. Do not use your normal Gmail password.
+
+---
+
+## 6. Run Backend Migrations
+
+```powershell
+cd C:\Users\xrist\Desktop\bond-analysis-dashboard\backend
+
+python manage.py makemigrations
+python manage.py migrate
+```
+
+Create admin user:
+
+```powershell
+python manage.py createsuperuser
+```
+
+Run backend checks:
+
+```powershell
+python manage.py check
+python -m compileall accounts bonds portfolios analytics
+```
+
+Start backend server:
+
+```powershell
+python manage.py runserver
+```
+
+Backend URL:
+
+```text
+http://127.0.0.1:8000
+```
+
+API base URL:
+
+```text
+http://127.0.0.1:8000/api
+```
+
+---
+
+## 7. Frontend Setup
+
+Open a second PowerShell window.
+
+```powershell
+cd C:\Users\xrist\Desktop\bond-analysis-dashboard\frontend
+```
+
+Install dependencies:
+
+```powershell
+npm install
+```
+
+Run build check:
+
+```powershell
+npm run build
+```
+
+Start frontend server:
+
+```powershell
+npm run dev
+```
+
+Frontend URL:
+
+```text
+http://localhost:5173
+```
+
+---
+
+## 🌐 Main Frontend Routes
+
+```text
+/dashboard
+/login
+/signup
+/verify-email
+/forgot-password
+/reset-password
+/portfolio
+/watchlist
+/discover-bonds
+/fx-rates
+/positions/new
+/positions/:positionId
+```
+
+---
+
+## 🔌 Main API Routes
+
+```text
+/api/auth/token/
+/api/auth/token/refresh/
+
+/api/accounts/signup/
+/api/accounts/verify-email/
+/api/accounts/resend-verification-code/
+/api/accounts/forgot-password/
+/api/accounts/reset-password/
+/api/accounts/me/
+
+/api/dashboard/
+/api/portfolio/
+/api/watchlist/
+/api/positions/<id>/
+
+/api/ai-research/discover/
+/api/ai-research/watchlist-market-refresh/
+/api/ai-research/portfolio-market-refresh/
+/api/ai-research/import-discovery/
+/api/ai-research/import-market/
+
+/api/discover-bonds/
+/api/discover-bonds/run/
+/api/discover-bonds/upload-csv/
+/api/discover-bonds/provider-status/
+
+/api/fx-rates/
+/api/fx-rates/update/
+```
+
+---
+
+## 🧪 Typical Test Flow
+
+### Account Flow
+
+```text
+/signup
+→ create account
+→ receive verification code
+→ /verify-email
+→ verify account
+→ /login
+→ login successfully
+```
+
+---
+
+### Forgot Password Flow
+
+```text
+/forgot-password
+→ enter email
+→ receive reset code
+→ /reset-password
+→ enter email, code, new password, confirm password
+→ login with new password
+```
+
+---
+
+### Watchlist Flow
+
+```text
+/watchlist
+→ add or monitor bonds
+→ Update Prices
+→ review market price, YTM, risk, signal, source, confidence
+```
+
+---
+
+### Portfolio Flow
+
+```text
+/portfolio
+→ add owned bonds
+→ Update Prices
+→ review updated value, YTM, risk, signal, exposure, stress test
+```
+
+---
+
+## 🧮 Financial Analytics
+
+The backend calculates:
+
+* Current yield.
+* Yield to maturity when enough data exists.
+* Modified duration.
+* Risk score.
+* Risk level.
+* Final signal.
+* Portfolio value.
+* Weighted average YTM.
+* Weighted current yield.
+* Weighted modified duration.
+* Currency exposure.
+* Estimated coupon income.
+* Interest rate stress test.
+
+---
+
+## 📉 Interest Rate Stress Test
+
+The Portfolio includes an interest rate stress test based on modified duration.
+
+It estimates how the Portfolio value may change under parallel interest rate shocks.
+
+Current limitations:
+
+* Does not include convexity.
+* Does not include credit spread shocks.
+* Does not include liquidity shocks.
+* Does not include FX shocks.
+* Uses available modified duration and current position value.
+
+---
+
+## 🧪 Useful Commands
+
+Backend check:
+
+```powershell
+cd C:\Users\xrist\Desktop\bond-analysis-dashboard\backend
+
+python manage.py check
+python -m compileall accounts bonds portfolios analytics
+```
 
 Frontend build:
 
-
-
 ```powershell
-
-cd C:\\Users\\xrist\\Desktop\\bond-analysis-dashboard\\frontend
-
-
+cd C:\Users\xrist\Desktop\bond-analysis-dashboard\frontend
 
 npm run build
-
 ```
-
-
 
 Git status:
 
-
-
 ```powershell
-
-cd C:\\Users\\xrist\\Desktop\\bond-analysis-dashboard
-
-
+cd C:\Users\xrist\Desktop\bond-analysis-dashboard
 
 git status
-
 ```
 
-
-
-\---
-
-
-
-\## 13. Git Workflow
-
-
-
-Before committing, always check that `.env` is not staged:
-
-
+Commit README:
 
 ```powershell
-
-git status
-
+git add README.md
+git commit -m "Add professional project README"
 ```
 
+---
 
+## 🔒 Security Notes
 
-If `backend/.env` appears as tracked or staged, remove it from Git index without deleting the local file:
-
-
-
-```powershell
-
-git rm --cached backend/.env
-
-```
-
-
-
-Typical commit commands:
-
-
-
-```powershell
-
-git add .
-
-git commit -m "Add project README documentation"
-
-```
-
-
-
-Push:
-
-
-
-```powershell
-
-git push
-
-```
-
-
-
-\---
-
-
-
-\## 14. Security Notes
-
-
-
-Do not commit:
-
-
+Never commit:
 
 ```text
-
 backend/.env
-
 frontend/.env
-
 .env
-
 API keys
-
 SMTP passwords
-
 Gmail App Passwords
-
 PostgreSQL passwords
-
+DJANGO_SECRET_KEY
 ```
 
-
-
-Safe files to commit:
-
-
+Safe to commit:
 
 ```text
-
-backend/.env.example
-
-frontend/.env.example
-
 README.md
-
 .gitignore
-
+backend/.env.example
+frontend/.env.example
 ```
 
+If `.env` was staged accidentally:
 
+```powershell
+git rm --cached backend/.env
+```
 
-\---
+---
 
-
-
-\## 15. Production Notes
-
-
+## 🚢 Production Checklist
 
 Before production deployment:
 
-
-
-\* Set `DJANGO\_DEBUG=False`.
-
-\* Use a strong `DJANGO\_SECRET\_KEY`.
-
-\* Configure real production `DJANGO\_ALLOWED\_HOSTS`.
-
-\* Use a production PostgreSQL database.
-
-\* Use a secure SMTP provider or transactional email provider.
-
-\* Use HTTPS.
-
-\* Review CORS settings.
-
-\* Protect OpenAI API key.
-
-\* Add logging and monitoring.
-
-\* Add background job processing for long AI research tasks.
-
-\* Add rate limiting for AI endpoints.
-
-\* Add production static file handling.
-
-\* Review all AI-imported data manually before relying on it.
-
-
-
-\---
-
-
-
-\## 16. Known Limitations
-
-
-
-\* AI-researched bond data is not an official live feed.
-
-\* Public bond market data can be incomplete or delayed.
-
-\* Some public sources provide CUSIP instead of full ISIN.
-
-\* Bid/ask prices may not be available from public sources.
-
-\* Market required return may be unavailable.
-
-\* FX conversion depends on available FX rates in the application.
-
-\* Stress test uses modified duration and does not include convexity, credit spread shocks, liquidity shocks, or FX shocks.
-
-\* The app does not provide investment advice.
-
-
-
-\---
-
-
-
-\## 17. Suggested Future Improvements
-
-
-
-\* Background jobs for AI market refresh.
-
-\* Scheduled daily refresh for Portfolio and Watchlist.
-
-\* User-level refresh limits.
-
-\* Better source ranking for market data.
-
-\* Manual review/approval workflow for AI market records.
-
-\* Export Portfolio and Watchlist to Excel.
-
-\* More advanced stress testing.
-
-\* Convexity calculations.
-
-\* Credit spread shock scenarios.
-
-\* Historical market data charts.
-
-\* Deployment with Docker.
-
-\* Production-ready CI/CD pipeline.
-
-
-
-\---
-
-
-
-\## License
-
-
-
-This project is currently for educational and personal use.
-
-
-
-\---
-
-
-
-\## Author
-
-
-
-Developed by Chris for educational bond analysis, portfolio monitoring, and AI-assisted financial data research.
-
-
-
+* Set `DJANGO_DEBUG=False`.
+* Use a strong production `DJANGO_SECRET_KEY`.
+* Configure production `DJANGO_ALLOWED_HOSTS`.
+* Use production PostgreSQL.
+* Configure secure SMTP or transactional email provider.
+* Use HTTPS.
+* Review CORS settings.
+* Protect OpenAI API key.
+* Add logging.
+* Add monitoring.
+* Add rate limiting for AI endpoints.
+* Add background jobs for long AI tasks.
+* Add backup strategy.
+* Review AI-imported records manually.
+
+---
+
+## ⚠️ Known Limitations
+
+* AI-researched bond data is not an official live feed.
+* Public bond market data may be delayed or incomplete.
+* Some sources expose CUSIP instead of full ISIN.
+* Bid/ask prices may not be publicly visible.
+* Market required return may be unavailable.
+* FX conversion depends on stored FX rates.
+* Stress testing is simplified.
+* The app does not provide investment advice.
+
+---
+
+## 🧭 Suggested Future Improvements
+
+* Scheduled daily Portfolio refresh.
+* Scheduled daily Watchlist refresh.
+* Background task queue with Celery or Django-Q.
+* User-level refresh limits.
+* Manual review screen for AI-researched data.
+* Historical market data charts.
+* Export Portfolio to Excel.
+* Export Watchlist to Excel.
+* Advanced convexity analytics.
+* Credit spread shock scenarios.
+* Liquidity risk model.
+* Docker setup.
+* CI/CD pipeline.
+* Production deployment guide.
+
+---
+
+## 📄 License
+
+This project is currently intended for educational and personal use.
+
+---
+
+## 👤 Author
+
+Developed by **Chris** for educational bond analysis, portfolio monitoring, and AI-assisted financial data research.
