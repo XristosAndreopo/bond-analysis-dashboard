@@ -39,18 +39,18 @@ class CandidatePreview:
 
 
 RISK_LABELS = {
-    "VERY_LOW": "Προκαταρκτικό: Πολύ χαμηλό",
-    "LOW": "Προκαταρκτικό: Χαμηλό",
-    "MEDIUM": "Προκαταρκτικό: Μεσαίο",
-    "HIGH": "Προκαταρκτικό: Υψηλό",
-    "VERY_HIGH": "Προκαταρκτικό: Πολύ υψηλό",
+    "VERY_LOW": "Πολύ χαμηλό",
+    "LOW": "Χαμηλό",
+    "MEDIUM": "Μεσαίο",
+    "HIGH": "Υψηλό",
+    "VERY_HIGH": "Πολύ υψηλό",
 }
 
 SIGNAL_LABELS = {
-    "BUY": "Προκαταρκτικά υποψήφιο για αγορά",
-    "BUY_WITH_CAUTION": "Προκαταρκτικά υποψήφιο με προσοχή",
-    "DO_NOT_BUY_WAIT": "Προκαταρκτικά περίμενε / έλεγξε",
-    "REVIEW": "Προκαταρκτικά χρειάζεται έλεγχο",
+    "BUY": "Υποψήφιο για αγορά",
+    "BUY_WITH_CAUTION": "Υποψήφιο με προσοχή",
+    "DO_NOT_BUY_WAIT": "Περίμενε / έλεγξε",
+    "REVIEW": "Χρειάζεται έλεγχο",
 }
 
 
@@ -120,7 +120,7 @@ def build_short_reasoning(candidate, duration, ytm):
     )
 
     return (
-        "Προκαταρκτική ένδειξη με βάση τα διαθέσιμα στοιχεία: "
+        "Ένδειξη με βάση τα διαθέσιμα στοιχεία του candidate: "
         f"rating {rating_text}, YTM {ytm_text}, duration {duration_text}."
     )
 
@@ -254,3 +254,5 @@ def calculate_preview_signal(rating_score, duration, ytm, preview_risk_level):
         return "BUY_WITH_CAUTION"
 
     return "DO_NOT_BUY_WAIT"
+
+

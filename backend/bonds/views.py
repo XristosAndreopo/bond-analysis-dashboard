@@ -384,7 +384,8 @@ class BondCandidateDiscoveryViewSet(ListModelMixin, GenericViewSet):
                 "source": "csv_provider",
                 "min_rating": "BBB-",
                 "currencies": ["EUR", "USD"],
-                "countries": ["GR", "US"]
+                "countries": ["GR", "US"],
+                "bond_types": ["GOVERNMENT", "CORPORATE"]
             }
 
         Response:
@@ -406,6 +407,7 @@ class BondCandidateDiscoveryViewSet(ListModelMixin, GenericViewSet):
                 min_rating=serializer.validated_data.get("min_rating"),
                 currencies=serializer.validated_data.get("currencies"),
                 countries=serializer.validated_data.get("countries"),
+                bond_types=serializer.validated_data.get("bond_types"),
             )
         except DiscoveryServiceError as exc:
             return Response(
@@ -555,3 +557,5 @@ class BondCandidateDiscoveryViewSet(ListModelMixin, GenericViewSet):
             },
             status=status.HTTP_200_OK,
         )
+
+

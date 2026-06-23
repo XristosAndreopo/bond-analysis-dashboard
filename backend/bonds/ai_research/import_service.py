@@ -26,6 +26,7 @@ from bonds.ai_research.schemas import (
     validate_discovery_research_result,
     validate_market_research_result,
 )
+from bonds.analytics.bond_math import calculate_basic_bond_metrics
 from bonds.discovery.rating_utils import RatingError, normalize_rating
 from bonds.models import (
     Bond,
@@ -229,6 +230,55 @@ def _import_single_discovery_item(
         return "skipped"
 
     credit_rating = _normalize_credit_rating(item.get("credit_rating"))
+    coupon_rate = _parse_decimal(item.get("coupon_rate"))
+    market_price = _parse_decimal(item.get("market_price"))
+    coupon_frequency = _parse_integer(item.get("coupon_frequency"), default=1)
+    ytm = _parse_decimal(item.get("ytm"))
+    duration = _parse_decimal(item.get("duration"))
+
+    if coupon_rate is None:
+        raise AIResearchImportError(
+            f"{isin} skipped: coupon_rate is required for backend YTM/duration calculation."
+        )
+
+    if market_price is None:
+        raise AIResearchImportError(
+            f"{isin} skipped: market_price is required for backend YTM/duration calculation."
+        )
+
+    metric_result = calculate_basic_bond_metrics(
+        market_price=market_price,
+        coupon_rate=coupon_rate,
+        maturity_date=maturity_date,
+        ytm=ytm,
+        duration=duration,
+        quote_date=timezone.localdate(),
+        face_value=Decimal("100.0000"),
+        coupon_frequency=coupon_frequency,
+    )
+
+    if metric_result["ytm"] is None:
+        raise AIResearchImportError(
+            f"{isin} skipped: YTM is missing and could not be calculated by the backend."
+        )
+
+    if metric_result["duration"] is None:
+        raise AIResearchImportError(
+            f"{isin} skipped: duration is missing and could not be calculated by the backend."
+        )
+
+    missing_fields = _remove_backend_calculated_fields_from_missing_fields(
+        missing_fields=_normalize_list(item.get("missing_fields")),
+        calculated_fields=metric_result["calculated_fields"],
+    )
+    research_payload = _build_research_payload_with_backend_calculations(
+        item=item,
+        metric_result=metric_result,
+    )
+    research_notes = _build_research_notes_with_backend_calculations(
+        research_notes=_normalize_text(item.get("research_notes")),
+        metric_result=metric_result,
+    )
 
     defaults = {
         "discovery_run": discovery_run,
@@ -236,13 +286,13 @@ def _import_single_discovery_item(
         "issuer": _truncate(_normalize_text(item.get("issuer")), 255),
         "country": _normalize_country_code(item.get("country")),
         "currency": _normalize_currency(item.get("currency")),
-        "coupon_rate": _parse_decimal(item.get("coupon_rate")),
+        "coupon_rate": coupon_rate,
         "maturity_date": maturity_date,
         "credit_rating": credit_rating,
         "rating_source": _truncate(_normalize_text(item.get("rating_source")), 100),
-        "market_price": _parse_decimal(item.get("market_price")),
-        "ytm": _parse_decimal(item.get("ytm")),
-        "duration": _parse_decimal(item.get("duration")),
+        "market_price": market_price,
+        "ytm": metric_result["ytm"],
+        "duration": metric_result["duration"],
         "source": _truncate(
             _normalize_text(item.get("primary_source_name")) or AI_RESEARCH_SOURCE,
             100,
@@ -253,9 +303,9 @@ def _import_single_discovery_item(
         "confidence": _normalize_confidence(item.get("confidence")),
         "needs_review": bool(item.get("needs_review", True)),
         "review_status": _normalize_review_status(item.get("review_status")),
-        "missing_fields": _normalize_list(item.get("missing_fields")),
-        "research_payload": item,
-        "ai_summary": _truncate(_normalize_text(item.get("research_notes")), 5000),
+        "missing_fields": missing_fields,
+        "research_payload": research_payload,
+        "ai_summary": _truncate(research_notes, 5000),
         "ai_reasoning": "",
         "status": BondCandidate.Status.NEW,
     }
@@ -306,6 +356,35 @@ def _import_single_market_item(item: dict[str, Any]) -> str:
         item=item,
     )
 
+    metric_result = calculate_basic_bond_metrics(
+        market_price=market_price,
+        coupon_rate=bond.annual_coupon_rate,
+        maturity_date=bond.maturity_date,
+        ytm=_parse_decimal(item.get("ytm")),
+        duration=None,
+        quote_date=quote_date,
+        face_value=bond.face_value,
+        coupon_frequency=bond.coupon_frequency,
+    )
+
+    if metric_result["ytm"] is None:
+        raise AIResearchImportError(
+            f"{isin} skipped: YTM is missing and could not be calculated by the backend."
+        )
+
+    missing_fields = _remove_backend_calculated_fields_from_missing_fields(
+        missing_fields=_normalize_list(item.get("missing_fields")),
+        calculated_fields=metric_result["calculated_fields"],
+    )
+    research_payload = _build_research_payload_with_backend_calculations(
+        item=item,
+        metric_result=metric_result,
+    )
+    notes = _build_research_notes_with_backend_calculations(
+        research_notes=_normalize_text(item.get("research_notes")),
+        metric_result=metric_result,
+    )
+
     market_data, created = BondMarketData.objects.update_or_create(
         bond=bond,
         quote_date=quote_date,
@@ -315,7 +394,7 @@ def _import_single_market_item(item: dict[str, Any]) -> str:
             "market_required_return": _parse_decimal(
                 item.get("market_required_return")
             ),
-            "ytm": _parse_decimal(item.get("ytm")),
+            "ytm": metric_result["ytm"],
             "bid_price": _parse_decimal(item.get("bid_price")),
             "ask_price": _parse_decimal(item.get("ask_price")),
             "source_url": _truncate(
@@ -328,9 +407,9 @@ def _import_single_market_item(item: dict[str, Any]) -> str:
             "confidence": _normalize_confidence(item.get("confidence")),
             "needs_review": bool(item.get("needs_review", True)),
             "review_status": _normalize_review_status(item.get("review_status")),
-            "missing_fields": _normalize_list(item.get("missing_fields")),
-            "research_payload": item,
-            "notes": _normalize_text(item.get("research_notes")),
+            "missing_fields": missing_fields,
+            "research_payload": research_payload,
+            "notes": notes,
         },
     )
 
@@ -571,6 +650,105 @@ def _parse_datetime(value: Any) -> datetime | None:
     return parsed_datetime
 
 
+
+def _parse_integer(value: Any, default: int = 1) -> int:
+    """
+    Parse an optional integer value safely.
+
+    Args:
+        value: Raw integer-like value.
+        default: Fallback value.
+
+    Returns:
+        Parsed integer or default.
+    """
+    if value is None or value == "":
+        return default
+
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _remove_backend_calculated_fields_from_missing_fields(
+    missing_fields: list[str],
+    calculated_fields: list[str],
+) -> list[str]:
+    """
+    Remove fields from missing_fields when the backend calculated them.
+
+    Args:
+        missing_fields: Original missing fields from AI research.
+        calculated_fields: Fields calculated by the backend.
+
+    Returns:
+        Cleaned missing fields.
+    """
+    calculated_set = {field.lower() for field in calculated_fields}
+
+    return [
+        field
+        for field in missing_fields
+        if field.lower() not in calculated_set
+    ]
+
+
+def _build_research_payload_with_backend_calculations(
+    item: dict[str, Any],
+    metric_result: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Attach backend calculation metadata to the raw research payload.
+
+    Args:
+        item: Original AI item.
+        metric_result: Backend calculation result.
+
+    Returns:
+        Payload with _backend_calculations metadata.
+    """
+    payload = dict(item)
+    payload["_backend_calculations"] = {
+        "calculated_fields": metric_result["calculated_fields"],
+        "missing_required_fields": metric_result["missing_required_fields"],
+        "calculation_notes": metric_result["calculation_notes"],
+        "ytm": str(metric_result["ytm"]) if metric_result["ytm"] is not None else None,
+        "duration": (
+            str(metric_result["duration"])
+            if metric_result["duration"] is not None
+            else None
+        ),
+    }
+
+    return payload
+
+
+def _build_research_notes_with_backend_calculations(
+    research_notes: str,
+    metric_result: dict[str, Any],
+) -> str:
+    """
+    Append backend calculation notes to AI research notes.
+
+    Args:
+        research_notes: Original research notes.
+        metric_result: Backend calculation result.
+
+    Returns:
+        Combined notes string.
+    """
+    notes = research_notes.strip()
+
+    if metric_result["calculation_notes"]:
+        if notes:
+            notes += " "
+
+        notes += metric_result["calculation_notes"]
+
+    return notes
+
+
 def _truncate(value: str, max_length: int) -> str:
     """
     Truncate text to a model-safe length.
@@ -586,3 +764,5 @@ def _join_errors(errors: list[str]) -> str:
     Join validation errors into a readable message.
     """
     return " | ".join(errors)
+
+

@@ -7,9 +7,9 @@
  * Important:
  * - This does not use the backend OpenAI API.
  * - This does not require an OpenAI API key in Django.
- * - The generated JSON is not saved directly.
- * - The frontend must send the generated JSON to the Django import endpoint.
- * - The backend remains responsible for validation and database import.
+ * - The generated JSON is not saved directly by the AI service.
+ * - The frontend sends the generated JSON to the Django import endpoint.
+ * - The backend remains responsible for validation, import and calculations.
  */
 
 import puter from "@heyputer/puter.js";
@@ -82,19 +82,16 @@ function buildDiscoveryResearchPrompt(filters) {
 You are an AI bond research assistant for a Django bond analysis dashboard.
 
 Your task:
-Search the web and return structured JSON only.
+Search the web for ACTIVE bond candidates and return structured JSON only.
 
 Important:
 - Do not provide investment advice.
-- Do not invent ISINs, prices, yields, ratings, maturities, or issuers.
+- Do not invent ISINs, prices, yields, ratings, maturities, issuers, or URLs.
 - If a value cannot be verified from a source, return null.
-- Every item must include at least one source URL.
-- Every source must explain which fields it supports.
+- Return fewer candidates if that improves data quality.
 - Coupon rates, YTM, and yields must be percentages, not ratios.
   Example: 4.125 means 4.125%.
 - Bond prices must be clean/market prices per 100 face value when available.
-- If market price or yield is delayed, indicative, or not clearly live, explain
-  that in research_notes and set needs_review to true.
 - Set review_status to "NEEDS_REVIEW" for every item.
 - Return JSON only. Do not include Markdown or explanation outside JSON.
 
@@ -130,7 +127,7 @@ Return exactly this JSON structure:
       "maturity_date": "YYYY-MM-DD or null",
       "credit_rating": "string or null",
       "rating_source": "string or null",
-      "bond_type": "string or null",
+      "bond_type": "GOVERNMENT or CORPORATE or TREASURY or MUNICIPAL or OTHER or null",
       "seniority": "string or null",
       "coupon_frequency": 1,
       "market_price": "number as string or null",
@@ -159,10 +156,38 @@ Return exactly this JSON structure:
 }
 
 Search goal:
-Find active bonds that match the filters. Prefer official issuer, exchange,
-regulator, broker, or recognized data-vendor pages. If market price, YTM,
-duration or rating cannot be verified, return null and add the field name to
-missing_fields.
+Find 3 to 5 active investment-grade bonds that match the filters.
+
+Mandatory inclusion rules:
+Only include a bond when these fields are verified from sources:
+- isin
+- name
+- issuer
+- country
+- currency
+- coupon_rate
+- maturity_date
+- credit_rating
+- market_price
+- primary_source_url
+
+Data quality rules:
+- Do not include matured bonds. maturity_date must be after the retrieval date.
+- Do not include a bond if credit_rating is below the selected minimum rating.
+- If a bond type filter is provided, include only bonds matching that type.
+- If market_price cannot be verified, do not include the bond.
+- If coupon_rate cannot be verified, do not include the bond.
+- If maturity_date cannot be verified, do not include the bond.
+- If YTM cannot be verified, set ytm to null and include "ytm" in missing_fields.
+- If duration cannot be verified, set duration to null and include "duration" in missing_fields.
+- The backend will calculate missing YTM and duration when market_price,
+  coupon_rate and maturity_date exist.
+- If a candidate has more than 3 missing_fields, do not include it.
+
+Source priority:
+Prefer official issuer, exchange, regulator, broker, or recognized data-vendor
+pages. Avoid weak sources when a stronger source is available. Every source
+must explain which fields it supports.
 
 Return JSON only.
 `.trim();

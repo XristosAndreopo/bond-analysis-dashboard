@@ -1345,3 +1345,267 @@ input[type="file"]::-webkit-file-upload-button {
 input[type="file"]::-webkit-file-upload-button:hover {
   background: var(--color-primary-dark);
 }
+
+
+
+
+/* ------------------------------------------------------------------
+ * 13. Discover Bonds page refinements
+ * ------------------------------------------------------------------ */
+
+.collapsible-card .section-header {
+  margin-bottom: 0;
+}
+
+.collapsible-card.is-open .section-header {
+  margin-bottom: 1rem;
+}
+
+.icon-button {
+  min-width: 42px;
+  padding: 0.55rem 0.75rem;
+}
+
+.compact-actions {
+  margin-top: 0;
+  margin-bottom: 1rem;
+}
+
+.discovery-action-card {
+  margin-bottom: 1.25rem;
+}
+
+.json-details {
+  margin-top: 1rem;
+}
+
+.json-details summary {
+  cursor: pointer;
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
+.json-details textarea {
+  margin-top: 0.75rem;
+  width: 100%;
+  min-height: 220px;
+  resize: vertical;
+  white-space: pre;
+  overflow: auto;
+}
+
+.candidate-table-scroll {
+  overflow-x: auto;
+}
+
+.candidate-bonds-table {
+  min-width: 1900px;
+  table-layout: auto;
+}
+
+.candidate-bonds-table th,
+.candidate-bonds-table td {
+  white-space: nowrap;
+  vertical-align: top;
+}
+
+.candidate-bonds-table .candidate-name-cell {
+  min-width: 260px;
+  max-width: 360px;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: break-word;
+  font-weight: 600;
+}
+
+.candidate-bonds-table .candidate-issuer-cell {
+  min-width: 220px;
+  max-width: 320px;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+.candidate-bonds-table .candidate-isin-cell {
+  min-width: 140px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+}
+
+.candidate-bonds-table .candidate-source-cell {
+  min-width: 220px;
+  max-width: 320px;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+
+.candidate-bonds-table .badge {
+  white-space: normal;
+  line-height: 1.2;
+}
+
+.candidate-bonds-table .table-action-buttons {
+  min-width: 150px;
+}
+
+@media (max-width: 900px) {
+  .candidate-bonds-table {
+    min-width: 1700px;
+  }
+}
+
+/* ------------------------------------------------------------------
+ * 14. Discovery filter checkbox groups and candidate table v2
+ * ------------------------------------------------------------------ */
+
+.discovery-main-filter-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin-bottom: 1rem;
+}
+
+.checkbox-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.checkbox-filter-group {
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  padding: 0.9rem;
+  background: #ffffff;
+}
+
+.checkbox-filter-group legend {
+  padding: 0 0.35rem;
+  color: var(--color-text-strong);
+  font-size: 0.9rem;
+  font-weight: 900;
+}
+
+.checkbox-pill-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-top: 0.65rem;
+}
+
+.checkbox-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: fit-content;
+  min-height: 34px;
+  padding: 0.4rem 0.65rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--color-text);
+  cursor: pointer;
+  font-size: 0.86rem;
+  font-weight: 800;
+  line-height: 1;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.checkbox-pill:hover {
+  border-color: var(--color-primary);
+  background: #f8fafc;
+}
+
+.checkbox-pill.is-selected {
+  border-color: var(--color-primary);
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--color-primary-dark);
+}
+
+.checkbox-pill input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--color-primary);
+}
+
+.candidate-bonds-table {
+  min-width: 1780px;
+}
+
+.candidate-bonds-table .candidate-name-cell {
+  min-width: 180px;
+  max-width: 230px;
+  font-size: 0.9rem;
+}
+
+.candidate-bonds-table .candidate-issuer-cell {
+  min-width: 170px;
+  max-width: 240px;
+  font-size: 0.9rem;
+}
+
+.candidate-bonds-table .candidate-source-cell {
+  min-width: 135px;
+  max-width: 170px;
+  font-size: 0.86rem;
+  overflow-wrap: break-word;
+}
+
+.candidate-bonds-table .candidate-source-cell a {
+  display: inline-block;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: top;
+}
+
+.candidate-bonds-table .candidate-source-cell small {
+  display: inline-block;
+  max-width: 160px;
+  color: var(--color-text-muted);
+  font-size: 0.76rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.candidate-bonds-table .candidate-risk-cell,
+.candidate-bonds-table .candidate-signal-cell {
+  min-width: 120px;
+  max-width: 170px;
+}
+
+.candidate-bonds-table .candidate-signal-cell {
+  min-width: 175px;
+  max-width: 240px;
+}
+
+.candidate-bonds-table .badge,
+.candidate-bonds-table .risk-badge,
+.candidate-bonds-table .signal-badge {
+  display: inline-flex;
+  width: auto;
+  max-width: none;
+  white-space: nowrap;
+  word-break: keep-all;
+  overflow-wrap: normal;
+  line-height: 1;
+}
+
+.candidate-bonds-table .signal-badge {
+  font-size: 0.76rem;
+  padding-right: 8px;
+  padding-left: 8px;
+}
+
+@media (max-width: 900px) {
+  .checkbox-filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .candidate-bonds-table {
+    min-width: 1780px;
+  }
+}

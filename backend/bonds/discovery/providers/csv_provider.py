@@ -10,7 +10,7 @@ from a controlled file without hardcoding candidate data in Python code.
 Expected CSV location:
     backend/bonds/discovery/data/bond_universe.csv
 
-Expected columns:
+Expected required columns:
     isin
     name
     issuer
@@ -25,6 +25,10 @@ Expected columns:
     duration
     source
     source_url
+
+Optional columns:
+    bond_type
+    coupon_frequency
 
 Important:
     This provider does not validate investment rules.
@@ -59,6 +63,11 @@ REQUIRED_COLUMNS = [
     "duration",
     "source",
     "source_url",
+]
+
+OPTIONAL_COLUMNS = [
+    "bond_type",
+    "coupon_frequency",
 ]
 
 
@@ -145,7 +154,7 @@ def normalize_csv_row(row, row_number):
     """
     normalized_row = {}
 
-    for column in REQUIRED_COLUMNS:
+    for column in [*REQUIRED_COLUMNS, *OPTIONAL_COLUMNS]:
         value = row.get(column, "")
 
         if value is None:
@@ -167,3 +176,5 @@ def normalize_csv_row(row, row_number):
         )
 
     return normalized_row
+
+

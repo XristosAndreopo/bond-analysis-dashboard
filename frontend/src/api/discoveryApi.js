@@ -9,7 +9,7 @@
 import apiClient from "./apiClient";
 
 /**
- * Fetch provider status/configuration report.
+ * Fetch provider/workflow status report.
  *
  * @returns {Promise<object>} Provider status report.
  */
@@ -37,12 +37,13 @@ export async function fetchDiscoveredBonds(params = {}) {
 }
 
 /**
- * Run the backend bond discovery engine.
+ * Run the backend CSV discovery engine.
  *
- * Supported sources:
- * - static_provider
+ * Supported backend source:
  * - csv_provider
- * - external_json_provider
+ *
+ * AI Research Provider does not call this endpoint. It generates structured
+ * JSON through Puter.js and imports it through importAIResearchDiscoveryJson().
  *
  * @param {object} payload - Optional discovery filters.
  * @returns {Promise<object>} Discovery run result and visible candidates.
@@ -56,7 +57,7 @@ export async function runBondDiscovery(payload = {}) {
 /**
  * Import AI-researched discovery JSON.
  *
- * This endpoint does not call OpenAI from the frontend. It sends already
+ * This endpoint does not call OpenAI from the backend. It sends already
  * structured JSON to the backend import endpoint.
  *
  * The backend validates the payload and creates/updates BondCandidate records
@@ -161,19 +162,6 @@ export async function uploadDiscoveryCsv(file) {
         "Content-Type": "multipart/form-data",
       },
     }
-  );
-
-  return response.data;
-}
-
-/**
- * Test the external JSON/API provider without saving candidates.
- *
- * @returns {Promise<object>} External provider test report.
- */
-export async function testExternalDiscoveryProvider() {
-  const response = await apiClient.get(
-    "/discover-bonds/test-external-provider/"
   );
 
   return response.data;

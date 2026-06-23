@@ -17,12 +17,14 @@ Supported providers are managed by:
 The frontend must not invent candidate data. It only displays backend results.
 """
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime as django_parse_datetime
 
+from bonds.analytics.bond_math import calculate_basic_bond_metrics
 from bonds.discovery.providers.provider_registry import (
     DEFAULT_DISCOVERY_SOURCE,
     ProviderRegistryError,
@@ -34,7 +36,15 @@ from bonds.discovery.rating_utils import (
     is_rating_at_least,
     normalize_rating,
 )
-from bonds.models import Bond, BondCandidate, BondMarketData, DiscoveryRun
+from bonds.models import (
+    Bond,
+    BondCandidate,
+    BondMarketData,
+    DataOrigin,
+    DiscoveryRun,
+    ResearchConfidence,
+    ReviewStatus,
+)
 from portfolios.models import UserBond
 
 
@@ -174,6 +184,130 @@ def parse_date(value, field_name, required=False):
         ) from exc
 
 
+def parse_datetime(value):
+    """
+    Parse a datetime value safely.
+
+    Args:
+        value: Raw datetime value.
+
+    Returns:
+        datetime or None.
+    """
+    if not value:
+        return None
+
+    if isinstance(value, datetime):
+        parsed_value = value
+    else:
+        parsed_value = django_parse_datetime(str(value).strip())
+
+    if parsed_value is None:
+        return None
+
+    if timezone.is_naive(parsed_value):
+        return timezone.make_aware(parsed_value, timezone.get_current_timezone())
+
+    return parsed_value
+
+
+
+def parse_integer(value, default=1):
+    """
+    Parse an integer value safely.
+
+    Args:
+        value: Raw integer-like value.
+        default: Fallback integer.
+
+    Returns:
+        int: Parsed integer or default.
+    """
+    if value is None or value == "":
+        return default
+
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def remove_backend_calculated_fields_from_missing_fields(
+    missing_fields,
+    calculated_fields,
+):
+    """
+    Remove fields from missing_fields when backend calculated them.
+
+    Args:
+        missing_fields: Original missing fields.
+        calculated_fields: Fields calculated by the backend.
+
+    Returns:
+        list: Cleaned missing field names.
+    """
+    calculated_set = {field.lower() for field in calculated_fields}
+
+    return [
+        field
+        for field in missing_fields
+        if str(field).lower() not in calculated_set
+    ]
+
+
+def build_research_payload_with_backend_calculations(
+    raw_candidate,
+    metric_result,
+):
+    """
+    Attach backend calculation metadata to a candidate payload.
+
+    Args:
+        raw_candidate: Original provider candidate dictionary.
+        metric_result: Result from calculate_basic_bond_metrics().
+
+    Returns:
+        dict: Payload with backend calculation metadata.
+    """
+    payload = dict(raw_candidate)
+    payload["_backend_calculations"] = {
+        "calculated_fields": metric_result["calculated_fields"],
+        "missing_required_fields": metric_result["missing_required_fields"],
+        "calculation_notes": metric_result["calculation_notes"],
+        "ytm": str(metric_result["ytm"]) if metric_result["ytm"] is not None else None,
+        "duration": (
+            str(metric_result["duration"])
+            if metric_result["duration"] is not None
+            else None
+        ),
+    }
+
+    return payload
+
+
+def build_summary_with_backend_calculations(summary, metric_result):
+    """
+    Append backend calculation notes to provider/AI summary text.
+
+    Args:
+        summary: Existing summary text.
+        metric_result: Result from calculate_basic_bond_metrics().
+
+    Returns:
+        str: Combined summary text.
+    """
+    combined_summary = summary.strip()
+
+    if metric_result["calculation_notes"]:
+        if combined_summary:
+            combined_summary += " "
+
+        combined_summary += metric_result["calculation_notes"]
+
+    return combined_summary
+
+
+
 def normalize_string_list(values):
     """
     Normalize a list of string values.
@@ -196,6 +330,89 @@ def normalize_string_list(values):
             normalized_values.append(normalized_value)
 
     return normalized_values
+
+
+def normalize_list(values):
+    """
+    Normalize a generic list.
+
+    Args:
+        values: Raw list, tuple, string or None.
+
+    Returns:
+        list: Clean list.
+    """
+    if values is None:
+        return []
+
+    if isinstance(values, list):
+        return values
+
+    if isinstance(values, tuple):
+        return list(values)
+
+    if values == "":
+        return []
+
+    return [values]
+
+
+def normalize_choice(value, choices_class, default_value):
+    """
+    Normalize a TextChoices-compatible value.
+
+    Args:
+        value: Raw value.
+        choices_class: Django TextChoices class.
+        default_value: Fallback choice value.
+
+    Returns:
+        str: Valid choice value.
+    """
+    if not value:
+        return default_value
+
+    raw_value = normalize_text(value)
+    allowed_values = list(choices_class.values)
+
+    if raw_value in allowed_values:
+        return raw_value
+
+    upper_value = raw_value.upper()
+
+    for allowed_value in allowed_values:
+        if upper_value == str(allowed_value).upper():
+            return allowed_value
+
+    return default_value
+
+
+def normalize_boolean(value, default=False):
+    """
+    Normalize a boolean-like value.
+
+    Args:
+        value: Raw boolean-like value.
+        default: Fallback value.
+
+    Returns:
+        bool: Normalized boolean.
+    """
+    if value is None or value == "":
+        return default
+
+    if isinstance(value, bool):
+        return value
+
+    normalized_value = normalize_text(value).lower()
+
+    if normalized_value in ["true", "1", "yes", "y"]:
+        return True
+
+    if normalized_value in ["false", "0", "no", "n"]:
+        return False
+
+    return default
 
 
 def normalize_raw_candidate(raw_candidate):
@@ -242,55 +459,133 @@ def normalize_raw_candidate(raw_candidate):
     except RatingError as exc:
         raise CandidateValidationError(str(exc)) from exc
 
+    coupon_rate = parse_decimal(
+        raw_candidate.get("coupon_rate"),
+        field_name="coupon_rate",
+        required=True,
+    )
+    market_price = parse_decimal(
+        raw_candidate.get("market_price"),
+        field_name="market_price",
+        required=True,
+    )
+    ytm = parse_decimal(
+        raw_candidate.get("ytm"),
+        field_name="ytm",
+    )
+    duration = parse_decimal(
+        raw_candidate.get("duration"),
+        field_name="duration",
+    )
+    coupon_frequency = parse_integer(
+        raw_candidate.get("coupon_frequency"),
+        default=1,
+    )
+
+    metric_result = calculate_basic_bond_metrics(
+        market_price=market_price,
+        coupon_rate=coupon_rate,
+        maturity_date=maturity_date,
+        ytm=ytm,
+        duration=duration,
+        quote_date=timezone.localdate(),
+        face_value=Decimal("100.0000"),
+        coupon_frequency=coupon_frequency,
+    )
+
+    if metric_result["ytm"] is None:
+        raise CandidateValidationError(
+            "YTM is missing and could not be calculated by the backend."
+        )
+
+    if metric_result["duration"] is None:
+        raise CandidateValidationError(
+            "Duration is missing and could not be calculated by the backend."
+        )
+
+    missing_fields = remove_backend_calculated_fields_from_missing_fields(
+        missing_fields=normalize_list(raw_candidate.get("missing_fields")),
+        calculated_fields=metric_result["calculated_fields"],
+    )
+    research_payload = build_research_payload_with_backend_calculations(
+        raw_candidate=raw_candidate,
+        metric_result=metric_result,
+    )
+    ai_summary = build_summary_with_backend_calculations(
+        summary=normalize_text(raw_candidate.get("ai_summary")),
+        metric_result=metric_result,
+    )
+
     return {
         "isin": isin,
         "name": name,
         "issuer": issuer,
         "country": country,
         "currency": currency,
-        "coupon_rate": parse_decimal(
-            raw_candidate.get("coupon_rate"),
-            field_name="coupon_rate",
-            required=True,
-        ),
+        "bond_type": normalize_text(raw_candidate.get("bond_type")).upper(),
+        "coupon_rate": coupon_rate,
         "maturity_date": maturity_date,
         "credit_rating": credit_rating,
         "rating_source": normalize_text(raw_candidate.get("rating_source")),
-        "market_price": parse_decimal(
-            raw_candidate.get("market_price"),
-            field_name="market_price",
-        ),
-        "ytm": parse_decimal(
-            raw_candidate.get("ytm"),
-            field_name="ytm",
-        ),
-        "duration": parse_decimal(
-            raw_candidate.get("duration"),
-            field_name="duration",
-        ),
+        "market_price": market_price,
+        "ytm": metric_result["ytm"],
+        "duration": metric_result["duration"],
         "source": normalize_text(raw_candidate.get("source")),
         "source_url": normalize_text(raw_candidate.get("source_url")),
-        "ai_summary": normalize_text(raw_candidate.get("ai_summary")),
+        "data_origin": normalize_choice(
+            raw_candidate.get("data_origin"),
+            DataOrigin,
+            DataOrigin.OTHER,
+        ),
+        "retrieved_at": parse_datetime(raw_candidate.get("retrieved_at")),
+        "confidence": normalize_choice(
+            raw_candidate.get("confidence"),
+            ResearchConfidence,
+            ResearchConfidence.LOW,
+        ),
+        "needs_review": normalize_boolean(
+            raw_candidate.get("needs_review"),
+            default=True,
+        ),
+        "review_status": normalize_choice(
+            raw_candidate.get("review_status"),
+            ReviewStatus,
+            ReviewStatus.NEEDS_REVIEW,
+        ),
+        "missing_fields": missing_fields,
+        "research_payload": research_payload,
+        "ai_summary": ai_summary,
         "ai_reasoning": normalize_text(raw_candidate.get("ai_reasoning")),
     }
 
 
-def candidate_passes_optional_filters(candidate, currencies, countries):
+def candidate_passes_optional_filters(
+    candidate,
+    currencies,
+    countries,
+    bond_types=None,
+):
     """
-    Check optional currency and country filters.
+    Check optional currency, country and bond type filters.
 
     Args:
         candidate: Normalized candidate dictionary.
         currencies: Allowed currencies.
         countries: Allowed countries.
+        bond_types: Allowed bond types.
 
     Returns:
         bool: True if the candidate passes filters.
     """
+    bond_types = bond_types or []
+
     if currencies and candidate["currency"] not in currencies:
         return False
 
     if countries and candidate["country"] not in countries:
+        return False
+
+    if bond_types and candidate.get("bond_type") not in bond_types:
         return False
 
     return True
@@ -368,6 +663,13 @@ def save_or_update_candidate(user, discovery_run, candidate):
         "duration": candidate["duration"],
         "source": candidate["source"],
         "source_url": candidate["source_url"],
+        "data_origin": candidate["data_origin"],
+        "retrieved_at": candidate["retrieved_at"],
+        "confidence": candidate["confidence"],
+        "needs_review": candidate["needs_review"],
+        "review_status": candidate["review_status"],
+        "missing_fields": candidate["missing_fields"],
+        "research_payload": candidate["research_payload"],
         "ai_summary": candidate["ai_summary"],
         "ai_reasoning": candidate["ai_reasoning"],
         "status": BondCandidate.Status.NEW,
@@ -389,6 +691,7 @@ def run_bond_discovery(
     min_rating=INVESTMENT_GRADE_MIN_RATING,
     currencies=None,
     countries=None,
+    bond_types=None,
 ):
     """
     Run bond discovery for a user.
@@ -399,6 +702,7 @@ def run_bond_discovery(
         min_rating: Minimum accepted rating.
         currencies: Optional list of allowed currencies.
         countries: Optional list of allowed countries.
+        bond_types: Optional list of allowed bond types.
 
     Returns:
         DiscoveryRun: Completed discovery run.
@@ -418,6 +722,7 @@ def run_bond_discovery(
 
     normalized_currencies = normalize_string_list(currencies)
     normalized_countries = normalize_string_list(countries)
+    normalized_bond_types = normalize_string_list(bond_types)
 
     discovery_run = DiscoveryRun.objects.create(
         user=user,
@@ -454,6 +759,7 @@ def run_bond_discovery(
                 candidate=candidate,
                 currencies=normalized_currencies,
                 countries=normalized_countries,
+                bond_types=normalized_bond_types,
             ):
                 total_skipped += 1
                 continue
@@ -590,9 +896,31 @@ def create_bond_from_candidate(candidate):
     return bond
 
 
+def build_market_data_notes_from_candidate(candidate):
+    """
+    Build market data notes from candidate research information.
+
+    Args:
+        candidate: BondCandidate instance.
+
+    Returns:
+        str: Notes for BondMarketData.
+    """
+    if candidate.ai_summary:
+        return candidate.ai_summary
+
+    if candidate.ai_reasoning:
+        return candidate.ai_reasoning
+
+    return "Created from discovery candidate."
+
+
 def create_or_update_market_data_from_candidate(candidate, bond):
     """
     Create or update market data from candidate data.
+
+    This function intentionally propagates discovery/AI research metadata
+    from BondCandidate to BondMarketData so the Watchlist keeps traceability.
 
     Args:
         candidate: BondCandidate instance.
@@ -604,15 +932,26 @@ def create_or_update_market_data_from_candidate(candidate, bond):
     if candidate.market_price is None:
         return None
 
+    source = candidate.source or "discovery_candidate"
+    quote_date = timezone.localdate()
+
     market_data, _created = BondMarketData.objects.update_or_create(
         bond=bond,
-        quote_date=timezone.localdate(),
-        source=candidate.source,
+        quote_date=quote_date,
+        source=source,
         defaults={
             "market_price": candidate.market_price,
             "ytm": candidate.ytm,
+            "source_url": candidate.source_url,
+            "data_origin": candidate.data_origin,
+            "retrieved_at": candidate.retrieved_at,
+            "confidence": candidate.confidence,
+            "needs_review": candidate.needs_review,
+            "review_status": candidate.review_status,
+            "missing_fields": candidate.missing_fields or [],
+            "research_payload": candidate.research_payload or {},
             "is_manual": False,
-            "notes": "Created from discovery candidate.",
+            "notes": build_market_data_notes_from_candidate(candidate),
         },
     )
 
@@ -718,3 +1057,5 @@ def ignore_candidate(user, candidate_id):
     )
 
     return candidate
+
+

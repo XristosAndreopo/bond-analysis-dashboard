@@ -1,32 +1,16 @@
 /**
  * Discover Bonds page.
  *
- * Displays bond candidates produced by the backend discovery engine.
+ * Purpose:
+ * - Show active candidate bonds that can be added to My Watchlist.
+ * - Support only two candidate sources:
+ *   1. CSV Provider
+ *   2. AI Research Provider
  *
- * The frontend does not invent bond data. It only:
- * - shows provider status/configuration
- * - lets the user test the external JSON/API provider safely
- * - lets the user download a CSV template
- * - lets the user upload a CSV bond universe
- * - lets the user generate AI-researched JSON through Puter.js
- * - lets the user import AI-researched JSON into the backend
- * - lets the user choose discovery filters
- * - asks the backend to run discovery
- * - displays validated candidates
- * - displays backend-calculated preview risk/signal
- * - clears current visible results when requested
- * - sends Add to Watchlist or Ignore actions
- *
- * The backend remains responsible for:
- * - provider data loading
- * - CSV validation
- * - AI research JSON validation/import
- * - external JSON/API mapping
- * - rating filtering
- * - maturity filtering
- * - duplicate checks
- * - user ownership rules
- * - preview risk/signal calculation
+ * The frontend never invents bond data. It either uploads CSV data or asks
+ * Puter.js to produce structured AI research JSON. The Django backend remains
+ * responsible for validation, user ownership, duplicate checks, import, and
+ * backend-calculated YTM/duration when enough verified fields exist.
  */
 
 import { useEffect, useState } from "react";
@@ -40,7 +24,6 @@ import {
   ignoreDiscoveredBond,
   importAIResearchDiscoveryJson,
   runBondDiscovery,
-  testExternalDiscoveryProvider,
   uploadDiscoveryCsv,
 } from "../api/discoveryApi";
 import RiskBadge from "../components/RiskBadge";
@@ -52,10 +35,12 @@ import {
   formatPercent,
 } from "../utils/formatters";
 
+const AI_RESEARCH_SOURCE = "ai_research_agent";
+const CSV_PROVIDER_SOURCE = "csv_provider";
+
 const SOURCE_OPTIONS = [
-  { value: "static_provider", label: "Static Provider" },
-  { value: "csv_provider", label: "CSV Provider" },
-  { value: "external_json_provider", label: "External JSON Provider" },
+  { value: CSV_PROVIDER_SOURCE, label: "CSV Provider" },
+  { value: AI_RESEARCH_SOURCE, label: "AI Research Provider" },
 ];
 
 const MINIMUM_RATING_OPTIONS = [
@@ -72,14 +57,14 @@ const MINIMUM_RATING_OPTIONS = [
 ];
 
 const CURRENCY_OPTIONS = [
-  { value: "", label: "All currencies" },
   { value: "EUR", label: "EUR" },
   { value: "USD", label: "USD" },
   { value: "GBP", label: "GBP" },
+  { value: "CHF", label: "CHF" },
+  { value: "JPY", label: "JPY" },
 ];
 
 const COUNTRY_OPTIONS = [
-  { value: "", label: "All countries" },
   { value: "GR", label: "Greece" },
   { value: "US", label: "United States" },
   { value: "DE", label: "Germany" },
@@ -89,11 +74,20 @@ const COUNTRY_OPTIONS = [
   { value: "NL", label: "Netherlands" },
 ];
 
+const BOND_TYPE_OPTIONS = [
+  { value: "GOVERNMENT", label: "Government" },
+  { value: "CORPORATE", label: "Corporate" },
+  { value: "TREASURY", label: "Treasury" },
+  { value: "MUNICIPAL", label: "Municipal" },
+  { value: "OTHER", label: "Other" },
+];
+
 const DEFAULT_FILTERS = {
-  source: "static_provider",
+  source: CSV_PROVIDER_SOURCE,
   minRating: "BBB-",
-  currency: "",
-  country: "",
+  currencies: [],
+  countries: [],
+  bondTypes: [],
 };
 
 const CSV_TEMPLATE_COLUMNS = [
@@ -102,7 +96,9 @@ const CSV_TEMPLATE_COLUMNS = [
   "issuer",
   "country",
   "currency",
+  "bond_type",
   "coupon_rate",
+  "coupon_frequency",
   "maturity_date",
   "credit_rating",
   "rating_source",
@@ -120,7 +116,9 @@ const CSV_TEMPLATE_ROWS = [
     "United States Treasury",
     "US",
     "USD",
+    "TREASURY",
     "4.125",
+    "2",
     "2031-05-31",
     "AA+",
     "Manual CSV",
@@ -136,7 +134,9 @@ const CSV_TEMPLATE_ROWS = [
     "Hellenic Republic",
     "GR",
     "EUR",
+    "GOVERNMENT",
     "3.875",
+    "1",
     "2028-06-15",
     "BBB-",
     "Manual CSV",
@@ -152,18 +152,18 @@ function DiscoverBondsPage() {
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [selectedCsvFile, setSelectedCsvFile] = useState(null);
   const [aiResearchJsonText, setAIResearchJsonText] = useState("");
+  const [aiQualityWarnings, setAIQualityWarnings] = useState([]);
 
   const [candidates, setCandidates] = useState([]);
   const [lastDiscoveryRun, setLastDiscoveryRun] = useState(null);
   const [lastCsvUpload, setLastCsvUpload] = useState(null);
   const [lastAIResearchImport, setLastAIResearchImport] = useState(null);
   const [providerStatus, setProviderStatus] = useState(null);
-  const [externalProviderTest, setExternalProviderTest] = useState(null);
 
+  const [isProviderStatusExpanded, setIsProviderStatusExpanded] =
+    useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingProviderStatus, setIsLoadingProviderStatus] = useState(false);
-  const [isTestingExternalProvider, setIsTestingExternalProvider] =
-    useState(false);
   const [isRunningDiscovery, setIsRunningDiscovery] = useState(false);
   const [isUploadingCsv, setIsUploadingCsv] = useState(false);
   const [isGeneratingAIResearchJson, setIsGeneratingAIResearchJson] =
@@ -175,6 +175,12 @@ function DiscoverBondsPage() {
 
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+
+  const isAIResearchSource = filters.source === AI_RESEARCH_SOURCE;
+  const isDiscovering =
+    isRunningDiscovery ||
+    isGeneratingAIResearchJson ||
+    isImportingAIResearchJson;
 
   useEffect(() => {
     loadProviderStatus();
@@ -220,10 +226,47 @@ function DiscoverBondsPage() {
       ...currentFilters,
       [name]: value,
     }));
+
+    setSuccessMessage("");
+    setErrorMessage("");
+  }
+
+  function handleCheckboxFilterChange(groupName, optionValue, isChecked) {
+    setFilters((currentFilters) => {
+      const currentValues = currentFilters[groupName] || [];
+      const nextValues = isChecked
+        ? [...new Set([...currentValues, optionValue])]
+        : currentValues.filter((value) => value !== optionValue);
+
+      return {
+        ...currentFilters,
+        [groupName]: nextValues,
+      };
+    });
+
+    setSuccessMessage("");
+    setErrorMessage("");
+  }
+
+  function handleCheckboxFilterClear(groupName) {
+    setFilters((currentFilters) => ({
+      ...currentFilters,
+      [groupName]: [],
+    }));
+
+    setSuccessMessage("");
+    setErrorMessage("");
   }
 
   function handleResetFilters() {
     setFilters(DEFAULT_FILTERS);
+    setSelectedCsvFile(null);
+    setLastCsvUpload(null);
+    setLastAIResearchImport(null);
+    setAIResearchJsonText("");
+    setAIQualityWarnings([]);
+    setSuccessMessage("");
+    setErrorMessage("");
   }
 
   function handleCsvFileChange(event) {
@@ -231,20 +274,6 @@ function DiscoverBondsPage() {
 
     setSelectedCsvFile(file);
     setLastCsvUpload(null);
-    setSuccessMessage("");
-    setErrorMessage("");
-  }
-
-  function handleAIResearchJsonChange(event) {
-    setAIResearchJsonText(event.target.value);
-    setLastAIResearchImport(null);
-    setSuccessMessage("");
-    setErrorMessage("");
-  }
-
-  function handleClearAIResearchJson() {
-    setAIResearchJsonText("");
-    setLastAIResearchImport(null);
     setSuccessMessage("");
     setErrorMessage("");
   }
@@ -267,22 +296,23 @@ function DiscoverBondsPage() {
 
   function buildDiscoveryPayload() {
     return {
-      source: filters.source,
+      source: CSV_PROVIDER_SOURCE,
       min_rating: filters.minRating,
-      currencies: filters.currency ? [filters.currency] : [],
-      countries: filters.country ? [filters.country] : [],
+      currencies: filters.currencies,
+      countries: filters.countries,
+      bond_types: filters.bondTypes,
     };
   }
 
   function buildAIResearchFilters() {
     return {
-      countries: filters.country ? [filters.country] : [],
-      currencies: filters.currency ? [filters.currency] : [],
+      countries: filters.countries,
+      currencies: filters.currencies,
       minimum_rating: filters.minRating || null,
       maturity_from: null,
       maturity_to: null,
       issuer_types: [],
-      bond_types: [],
+      bond_types: filters.bondTypes,
     };
   }
 
@@ -300,12 +330,8 @@ function DiscoverBondsPage() {
       const result = await uploadDiscoveryCsv(selectedCsvFile);
 
       setLastCsvUpload(result.upload || null);
-      setFilters((currentFilters) => ({
-        ...currentFilters,
-        source: "csv_provider",
-      }));
       setSuccessMessage(
-        "CSV uploaded successfully. Source changed to CSV Provider. Press Run Discovery."
+        "CSV uploaded successfully. Press Discovery to load candidates."
       );
 
       await loadProviderStatus();
@@ -316,11 +342,44 @@ function DiscoverBondsPage() {
     }
   }
 
-  async function handleGenerateAIResearchJson() {
+  async function handleDiscover() {
+    if (isAIResearchSource) {
+      await handleAIResearchDiscovery();
+      return;
+    }
+
+    await handleCsvDiscovery();
+  }
+
+  async function handleCsvDiscovery() {
+    setIsRunningDiscovery(true);
+    setSuccessMessage("");
+    setErrorMessage("");
+    setAIQualityWarnings([]);
+
+    try {
+      const result = await runBondDiscovery(buildDiscoveryPayload());
+      const discoveryRun = result.run || null;
+
+      setLastDiscoveryRun(discoveryRun);
+      setCandidates(Array.isArray(result.candidates) ? result.candidates : []);
+      setSuccessMessage("Discovery completed successfully from CSV Provider.");
+    } catch (error) {
+      setErrorMessage(
+        getApiErrorMessage(error, "Could not run CSV bond discovery.")
+      );
+    } finally {
+      setIsRunningDiscovery(false);
+    }
+  }
+
+  async function handleAIResearchDiscovery() {
     setIsGeneratingAIResearchJson(true);
+    setIsImportingAIResearchJson(false);
     setSuccessMessage("");
     setErrorMessage("");
     setLastAIResearchImport(null);
+    setAIQualityWarnings([]);
 
     try {
       const generatedPayload = await generateDiscoveryResearchJson(
@@ -328,44 +387,12 @@ function DiscoverBondsPage() {
       );
 
       setAIResearchJsonText(JSON.stringify(generatedPayload, null, 2));
-      setSuccessMessage(
-        "AI Research JSON generated successfully. Review it and press Import AI JSON."
-      );
-    } catch (error) {
-      setErrorMessage(
-        getApiErrorMessage(error, "Could not generate AI Research JSON.")
-      );
-    } finally {
+      setAIQualityWarnings(buildAIQualityWarnings(generatedPayload));
+
       setIsGeneratingAIResearchJson(false);
-    }
-  }
+      setIsImportingAIResearchJson(true);
 
-  async function handleImportAIResearchJson() {
-    if (!aiResearchJsonText.trim()) {
-      setErrorMessage("Please paste AI Research JSON first.");
-      return;
-    }
-
-    let parsedPayload = null;
-
-    try {
-      parsedPayload = JSON.parse(aiResearchJsonText);
-    } catch (error) {
-      setErrorMessage("Invalid JSON. Please check the pasted AI Research output.");
-      return;
-    }
-
-    if (!parsedPayload || Array.isArray(parsedPayload)) {
-      setErrorMessage("AI Research JSON must be a JSON object.");
-      return;
-    }
-
-    setIsImportingAIResearchJson(true);
-    setSuccessMessage("");
-    setErrorMessage("");
-
-    try {
-      const result = await importAIResearchDiscoveryJson(parsedPayload);
+      const result = await importAIResearchDiscoveryJson(generatedPayload);
       const importSummary = result.import_summary || null;
 
       setLastAIResearchImport(importSummary);
@@ -387,54 +414,16 @@ function DiscoverBondsPage() {
         await loadCandidates();
       }
 
-      setSuccessMessage("AI Research JSON imported successfully.");
+      setSuccessMessage(
+        "AI Research Provider completed. The backend imported valid candidates and calculated missing YTM/duration where possible."
+      );
     } catch (error) {
       setErrorMessage(
-        getApiErrorMessage(error, "Could not import AI Research JSON.")
+        getApiErrorMessage(error, "Could not complete AI Research discovery.")
       );
     } finally {
+      setIsGeneratingAIResearchJson(false);
       setIsImportingAIResearchJson(false);
-    }
-  }
-
-  async function handleTestExternalProvider() {
-    setIsTestingExternalProvider(true);
-    setSuccessMessage("");
-    setErrorMessage("");
-
-    try {
-      const result = await testExternalDiscoveryProvider();
-
-      setExternalProviderTest(result);
-      setSuccessMessage("External provider test completed.");
-    } catch (error) {
-      setExternalProviderTest(null);
-      setErrorMessage(
-        getApiErrorMessage(error, "Could not test external provider.")
-      );
-    } finally {
-      setIsTestingExternalProvider(false);
-    }
-  }
-
-  async function handleRunDiscovery() {
-    setIsRunningDiscovery(true);
-    setSuccessMessage("");
-    setErrorMessage("");
-
-    try {
-      const result = await runBondDiscovery(buildDiscoveryPayload());
-      const discoveryRun = result.run || null;
-
-      setLastDiscoveryRun(discoveryRun);
-      setCandidates(Array.isArray(result.candidates) ? result.candidates : []);
-      setSuccessMessage("Discovery completed successfully.");
-    } catch (error) {
-      setErrorMessage(
-        getApiErrorMessage(error, "Could not run bond discovery.")
-      );
-    } finally {
-      setIsRunningDiscovery(false);
     }
   }
 
@@ -510,9 +499,8 @@ function DiscoverBondsPage() {
         <div>
           <h1>Discover Bonds</h1>
           <p>
-            Find validated bond candidates from backend providers, CSV imports
-            or AI Research JSON and add them to your Watchlist for further
-            analysis.
+            Find active bond candidates from CSV import or AI Research and add
+            them to your Watchlist for further analysis.
           </p>
         </div>
 
@@ -531,261 +519,69 @@ function DiscoverBondsPage() {
 
       <ProviderStatusSection
         providerStatus={providerStatus}
-        externalProviderTest={externalProviderTest}
+        isExpanded={isProviderStatusExpanded}
         isLoading={isLoadingProviderStatus}
-        isTestingExternalProvider={isTestingExternalProvider}
         onRefresh={loadProviderStatus}
-        onTestExternalProvider={handleTestExternalProvider}
+        onToggle={() => setIsProviderStatusExpanded((current) => !current)}
       />
 
-      <div className="toolbar-card">
-        <div className="section-header">
-          <div>
-            <h2>Upload CSV Bond Universe</h2>
-            <p>
-              Upload a CSV file to replace the local CSV Provider universe.
-              The backend validates the file before saving it.
-            </p>
-          </div>
-        </div>
+      <DiscoveryFiltersSection
+        filters={filters}
+        onFilterChange={handleFilterChange}
+        onCheckboxFilterChange={handleCheckboxFilterChange}
+        onCheckboxFilterClear={handleCheckboxFilterClear}
+      />
 
-        <div className="form-grid">
-          <label>
-            CSV File
-            <input
-              type="file"
-              accept=".csv,text/csv"
-              onChange={handleCsvFileChange}
-            />
-          </label>
+      {isAIResearchSource ? (
+        <AIResearchProviderSection
+          isGenerating={isGeneratingAIResearchJson}
+          isImporting={isImportingAIResearchJson}
+          generatedJsonText={aiResearchJsonText}
+          qualityWarnings={aiQualityWarnings}
+          lastImport={lastAIResearchImport}
+        />
+      ) : (
+        <CSVProviderSection
+          selectedCsvFile={selectedCsvFile}
+          lastCsvUpload={lastCsvUpload}
+          isUploadingCsv={isUploadingCsv}
+          onCsvFileChange={handleCsvFileChange}
+          onDownloadCsvTemplate={handleDownloadCsvTemplate}
+          onUploadCsv={handleUploadCsv}
+        />
+      )}
 
-          <label>
-            Selected File
-            <input
-              type="text"
-              value={selectedCsvFile?.name || "No file selected"}
-              readOnly
-            />
-          </label>
-        </div>
-
-        <div className="form-actions">
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={handleDownloadCsvTemplate}
-          >
-            Download CSV Template
-          </button>
-
-          <button
-            type="button"
-            className="primary-button"
-            onClick={handleUploadCsv}
-            disabled={isUploadingCsv || !selectedCsvFile}
-          >
-            {isUploadingCsv ? "Uploading..." : "Upload CSV"}
-          </button>
-        </div>
-
-        {lastCsvUpload && (
-          <p className="helper-text">
-            Uploaded rows: {lastCsvUpload.row_count}. Stored as CSV Provider
-            universe.
-          </p>
-        )}
-      </div>
-
-      <div className="toolbar-card">
-        <div className="section-header">
-          <div>
-            <h2>Import AI Research JSON</h2>
-            <p>
-              Generate AI-researched JSON through Puter.js or paste structured
-              JSON manually. The backend validates it and imports candidates as
-              AI-researched data.
-            </p>
-          </div>
-        </div>
-
-        <div className="warning-box">
-          Τα δεδομένα που εισάγονται εδώ είναι AI-researched data και όχι
-          επίσημο live market feed. Κάθε εγγραφή πρέπει να έχει πηγή,
-          source URL, timestamp, confidence και review status.
-        </div>
-
-        <label>
-          AI Research JSON
-          <textarea
-            value={aiResearchJsonText}
-            onChange={handleAIResearchJsonChange}
-            rows="12"
-            placeholder='Paste DiscoveryResearchResult JSON here. Example: {"research_type":"DISCOVERY", ...}'
-          />
-        </label>
-
+      <div className="toolbar-card discovery-action-card">
         <div className="form-actions">
           <button
             type="button"
             className="primary-button"
-            onClick={handleGenerateAIResearchJson}
-            disabled={isGeneratingAIResearchJson || isImportingAIResearchJson}
+            onClick={handleDiscover}
+            disabled={isDiscovering}
           >
-            {isGeneratingAIResearchJson ? "Generating..." : "Generate AI JSON"}
-          </button>
-
-          <button
-            type="button"
-            className="primary-button"
-            onClick={handleImportAIResearchJson}
-            disabled={
-              isGeneratingAIResearchJson ||
-              isImportingAIResearchJson ||
-              !aiResearchJsonText.trim()
-            }
-          >
-            {isImportingAIResearchJson ? "Importing..." : "Import AI JSON"}
-          </button>
-
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={handleClearAIResearchJson}
-            disabled={
-              isGeneratingAIResearchJson ||
-              isImportingAIResearchJson ||
-              !aiResearchJsonText.trim()
-            }
-          >
-            Clear JSON
-          </button>
-        </div>
-
-        {lastAIResearchImport && (
-          <div className="summary-card-grid">
-            <DiscoveryRunCard
-              title="Found"
-              value={lastAIResearchImport.total_found}
-            />
-            <DiscoveryRunCard
-              title="Created"
-              value={lastAIResearchImport.total_created}
-            />
-            <DiscoveryRunCard
-              title="Updated"
-              value={lastAIResearchImport.total_updated}
-            />
-            <DiscoveryRunCard
-              title="Skipped"
-              value={lastAIResearchImport.total_skipped}
-            />
-          </div>
-        )}
-
-        {lastAIResearchImport?.errors?.length > 0 && (
-          <div className="error-box">
-            <strong>Import errors:</strong>
-            <ul>
-              {lastAIResearchImport.errors.map((error, index) => (
-                <li key={`${error}-${index}`}>{error}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
-
-      <div className="toolbar-card">
-        <div className="section-header">
-          <div>
-            <h2>Discovery Filters</h2>
-            <p>
-              Choose the source, minimum rating, currency and country filters
-              before running discovery or generating AI research JSON.
-            </p>
-          </div>
-        </div>
-
-        <div className="form-grid">
-          <label>
-            Source
-            <select
-              name="source"
-              value={filters.source}
-              onChange={handleFilterChange}
-            >
-              {SOURCE_OPTIONS.map((source) => (
-                <option value={source.value} key={source.value}>
-                  {source.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            Minimum Rating
-            <select
-              name="minRating"
-              value={filters.minRating}
-              onChange={handleFilterChange}
-            >
-              {MINIMUM_RATING_OPTIONS.map((rating) => (
-                <option value={rating} key={rating}>
-                  {rating}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            Currency
-            <select
-              name="currency"
-              value={filters.currency}
-              onChange={handleFilterChange}
-            >
-              {CURRENCY_OPTIONS.map((currency) => (
-                <option value={currency.value} key={currency.value}>
-                  {currency.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            Country
-            <select
-              name="country"
-              value={filters.country}
-              onChange={handleFilterChange}
-            >
-              {COUNTRY_OPTIONS.map((country) => (
-                <option value={country.value} key={country.value}>
-                  {country.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <div className="form-actions">
-          <button
-            type="button"
-            className="primary-button"
-            onClick={handleRunDiscovery}
-            disabled={isRunningDiscovery}
-          >
-            {isRunningDiscovery ? "Running..." : "Run Discovery"}
+            {getDiscoveryButtonLabel({
+              isAIResearchSource,
+              isGeneratingAIResearchJson,
+              isImportingAIResearchJson,
+              isRunningDiscovery,
+            })}
           </button>
 
           <button
             type="button"
             className="secondary-button"
             onClick={handleResetFilters}
-            disabled={isRunningDiscovery}
+            disabled={isDiscovering}
           >
-            Reset Filters
+            Reset
           </button>
         </div>
+
+        <p className="helper-text">
+          The backend filters matured bonds, ratings below the selected minimum,
+          duplicate ISINs, and bonds already active in your Portfolio or
+          Watchlist.
+        </p>
       </div>
 
       {errorMessage && <div className="error-box">{errorMessage}</div>}
@@ -806,226 +602,80 @@ function DiscoverBondsPage() {
         </div>
       )}
 
-      <div className="table-card">
-        <div className="section-header section-header-with-actions">
-          <div>
-            <h2>Candidate Bonds</h2>
-            <p>
-              The backend excludes expired bonds, ratings below the selected
-              minimum threshold, duplicate ISINs, and bonds already active in
-              your Portfolio or Watchlist.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={handleClearCurrentResults}
-            disabled={
-              isClearingResults ||
-              isRunningDiscovery ||
-              candidates.length === 0
-            }
-          >
-            {isClearingResults ? "Clearing..." : "Clear Current Results"}
-          </button>
-        </div>
-
-        <div className="warning-box">
-          Η αξιολόγηση στο Discover Bonds είναι προκαταρκτική. Η τελική
-          αξιολόγηση θα γίνει με την προσθήκη στο Watchlist, αφού ληφθούν όλα
-          τα απαραίτητα στοιχεία.
-        </div>
-
-        {isLoading ? (
-          <div className="loading-text">Loading discovered bonds...</div>
-        ) : (
-          <div className="table-scroll">
-            <table className="wide-table">
-              <thead>
-                <tr>
-                  <th>Bond</th>
-                  <th>ISIN</th>
-                  <th>Country</th>
-                  <th>Issuer</th>
-                  <th>Currency</th>
-                  <th>Rating</th>
-                  <th>Maturity</th>
-                  <th>Coupon</th>
-                  <th>Market Price</th>
-                  <th>YTM</th>
-                  <th>Duration</th>
-                  <th>Source</th>
-                  <th>Confidence</th>
-                  <th>Review</th>
-                  <th>Preview Risk</th>
-                  <th>Preview Signal</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {candidates.length === 0 ? (
-                  <tr>
-                    <td colSpan="17">
-                      No candidates are available. Adjust filters, import AI
-                      JSON, upload CSV or press Run Discovery.
-                    </td>
-                  </tr>
-                ) : (
-                  candidates.map((candidate) => (
-                    <tr key={candidate.id}>
-                      <td>{candidate.name}</td>
-                      <td>{candidate.isin}</td>
-                      <td>{candidate.country || "-"}</td>
-                      <td>{candidate.issuer}</td>
-                      <td>{candidate.currency}</td>
-                      <td>{candidate.credit_rating}</td>
-                      <td>{candidate.maturity_date}</td>
-                      <td>{formatPercent(candidate.coupon_rate, 3)}</td>
-
-                      <td>
-                        {candidate.market_price
-                          ? formatMoney(
-                              candidate.market_price,
-                              candidate.currency,
-                              4
-                            )
-                          : "-"}
-                      </td>
-
-                      <td>{formatPercent(candidate.ytm, 2)}</td>
-                      <td>{formatDecimal(candidate.duration, 4)}</td>
-
-                      <td>
-                        <CandidateSource candidate={candidate} />
-                      </td>
-
-                      <td>
-                        {candidate.confidence_label ||
-                          candidate.confidence ||
-                          "-"}
-                      </td>
-
-                      <td>
-                        {candidate.review_status_label ||
-                          candidate.review_status ||
-                          "-"}
-                      </td>
-
-                      <td>
-                        <RiskBadge
-                          riskLevel={candidate.preview_risk_level}
-                          label={candidate.preview_risk_label}
-                        />
-                      </td>
-
-                      <td>
-                        <SignalBadge
-                          signal={candidate.preview_signal}
-                          label={candidate.preview_signal_label}
-                        />
-                      </td>
-
-                      <td>
-                        <div className="table-action-buttons">
-                          <button
-                            type="button"
-                            className="primary-button small-button"
-                            disabled={candidateActionId === candidate.id}
-                            onClick={() => handleAddToWatchlist(candidate.id)}
-                          >
-                            {candidateActionId === candidate.id
-                              ? "Adding..."
-                              : "Add"}
-                          </button>
-
-                          <button
-                            type="button"
-                            className="secondary-button small-button"
-                            disabled={candidateActionId === candidate.id}
-                            onClick={() => handleIgnore(candidate.id)}
-                          >
-                            Ignore
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      <CandidateBondsTable
+        candidates={candidates}
+        isLoading={isLoading}
+        isClearingResults={isClearingResults}
+        isDiscovering={isDiscovering}
+        candidateActionId={candidateActionId}
+        onClearCurrentResults={handleClearCurrentResults}
+        onAddToWatchlist={handleAddToWatchlist}
+        onIgnore={handleIgnore}
+      />
     </section>
   );
 }
 
 function ProviderStatusSection({
   providerStatus,
-  externalProviderTest,
+  isExpanded,
   isLoading,
-  isTestingExternalProvider,
   onRefresh,
-  onTestExternalProvider,
+  onToggle,
 }) {
   return (
-    <div className="toolbar-card">
+    <div className={`toolbar-card collapsible-card ${isExpanded ? "is-open" : ""}`}>
       <div className="section-header section-header-with-actions">
         <div>
           <h2>Provider Status</h2>
           <p>
-            Check which discovery providers are available before running bond
-            discovery.
+            Status for CSV Provider and AI Research Provider.
           </p>
         </div>
 
-        <div className="table-action-buttons">
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={onRefresh}
-            disabled={isLoading}
-          >
-            {isLoading ? "Refreshing..." : "Refresh Status"}
-          </button>
-
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={onTestExternalProvider}
-            disabled={isTestingExternalProvider}
-          >
-            {isTestingExternalProvider
-              ? "Testing..."
-              : "Test External Provider"}
-          </button>
-        </div>
+        <button
+          type="button"
+          className="secondary-button icon-button"
+          onClick={onToggle}
+          aria-expanded={isExpanded}
+        >
+          {isExpanded ? "▲" : "▼"}
+        </button>
       </div>
 
-      {!providerStatus ? (
-        <p className="helper-text">Provider status is not available yet.</p>
-      ) : (
+      {isExpanded && (
         <>
-          <p className="helper-text">
-            Default source: {providerStatus.default_source}. Supported sources:{" "}
-            {providerStatus.supported_sources?.join(", ")}.
-          </p>
-
-          <div className="summary-card-grid">
-            {providerStatus.providers?.map((provider) => (
-              <ProviderStatusCard
-                provider={provider}
-                key={provider.source}
-              />
-            ))}
+          <div className="form-actions compact-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onRefresh}
+              disabled={isLoading}
+            >
+              {isLoading ? "Refreshing..." : "Refresh Status"}
+            </button>
           </div>
-        </>
-      )}
 
-      {externalProviderTest && (
-        <ExternalProviderTestResult result={externalProviderTest} />
+          {!providerStatus ? (
+            <p className="helper-text">Provider status is not available yet.</p>
+          ) : (
+            <>
+              <p className="helper-text">
+                Default source: {providerStatus.default_source}. Supported
+                sources: {providerStatus.supported_sources?.join(", ")}.
+              </p>
+
+              <div className="summary-card-grid">
+                {providerStatus.providers?.map((provider) => (
+                  <ProviderStatusCard
+                    provider={provider}
+                    key={provider.source}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </>
       )}
     </div>
   );
@@ -1041,7 +691,6 @@ function ProviderStatusCard({ provider }) {
       <strong>{provider.available ? "Available" : "Needs attention"}</strong>
 
       <p className="helper-text">Mode: {provider.mode}</p>
-
       <p className="helper-text">{provider.detail}</p>
 
       {provider.file_name && (
@@ -1055,91 +704,449 @@ function ProviderStatusCard({ provider }) {
           </p>
         )}
 
-      {provider.source === "external_json_provider" && (
+      {configuration.backend_calculates_missing_ytm_duration && (
         <p className="helper-text">
-          API URL:{" "}
-          {configuration.external_api_url_configured ? "Configured" : "Not set"}
-          {" | "}
-          API Key:{" "}
-          {configuration.external_api_key_configured ? "Configured" : "Not set"}
+          Backend calculates missing YTM/duration when price, coupon and
+          maturity exist.
         </p>
       )}
     </div>
   );
 }
 
-function ExternalProviderTestResult({ result }) {
+function DiscoveryFiltersSection({
+  filters,
+  onFilterChange,
+  onCheckboxFilterChange,
+  onCheckboxFilterClear,
+}) {
   return (
-    <div className="table-card nested-card">
+    <div className="toolbar-card">
       <div className="section-header">
         <div>
-          <h3>External Provider Test Result</h3>
+          <h2>Discovery Filters</h2>
           <p>
-            This test loads and validates external provider data without saving
-            anything to the database.
+            Choose source, minimum rating, currencies, countries and bond types.
+            Leave a checkbox group empty to include all values in that group.
           </p>
         </div>
       </div>
 
-      <div className="summary-card-grid">
-        <DiscoveryRunCard title="Mode" value={result.mode} />
-        <DiscoveryRunCard
-          title="API Configured"
-          value={result.api_configured ? "Yes" : "No"}
-        />
-        <DiscoveryRunCard
-          title="Data Loaded"
-          value={result.data_loaded ? "Yes" : "No"}
-        />
-        <DiscoveryRunCard title="Loaded" value={result.loaded_count} />
-        <DiscoveryRunCard title="Valid" value={result.valid_count} />
-        <DiscoveryRunCard title="Invalid" value={result.invalid_count} />
+      <div className="form-grid discovery-main-filter-grid">
+        <label>
+          Source
+          <select
+            name="source"
+            value={filters.source}
+            onChange={onFilterChange}
+          >
+            {SOURCE_OPTIONS.map((source) => (
+              <option value={source.value} key={source.value}>
+                {source.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Minimum Rating
+          <select
+            name="minRating"
+            value={filters.minRating}
+            onChange={onFilterChange}
+          >
+            {MINIMUM_RATING_OPTIONS.map((rating) => (
+              <option value={rating} key={rating}>
+                {rating}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
-      {result.errors?.length > 0 && (
-        <div className="error-box">
-          <strong>Errors:</strong>
+      <div className="checkbox-filter-grid">
+        <CheckboxFilterGroup
+          title="Currency"
+          allLabel="All currencies"
+          options={CURRENCY_OPTIONS}
+          selectedValues={filters.currencies}
+          onChange={(optionValue, isChecked) =>
+            onCheckboxFilterChange("currencies", optionValue, isChecked)
+          }
+          onClear={() => onCheckboxFilterClear("currencies")}
+        />
+
+        <CheckboxFilterGroup
+          title="Country"
+          allLabel="All countries"
+          options={COUNTRY_OPTIONS}
+          selectedValues={filters.countries}
+          onChange={(optionValue, isChecked) =>
+            onCheckboxFilterChange("countries", optionValue, isChecked)
+          }
+          onClear={() => onCheckboxFilterClear("countries")}
+        />
+
+        <CheckboxFilterGroup
+          title="Bond Type"
+          allLabel="All bond types"
+          options={BOND_TYPE_OPTIONS}
+          selectedValues={filters.bondTypes}
+          onChange={(optionValue, isChecked) =>
+            onCheckboxFilterChange("bondTypes", optionValue, isChecked)
+          }
+          onClear={() => onCheckboxFilterClear("bondTypes")}
+        />
+      </div>
+    </div>
+  );
+}
+
+function CheckboxFilterGroup({
+  title,
+  allLabel,
+  options,
+  selectedValues,
+  onChange,
+  onClear,
+}) {
+  const activeValues = selectedValues || [];
+  const isAllSelected = activeValues.length === 0;
+
+  return (
+    <fieldset className="checkbox-filter-group">
+      <legend>{title}</legend>
+
+      <label className={`checkbox-pill ${isAllSelected ? "is-selected" : ""}`}>
+        <input
+          type="checkbox"
+          checked={isAllSelected}
+          onChange={onClear}
+        />
+        {allLabel}
+      </label>
+
+      <div className="checkbox-pill-list">
+        {options.map((option) => {
+          const isSelected = activeValues.includes(option.value);
+
+          return (
+            <label
+              className={`checkbox-pill ${isSelected ? "is-selected" : ""}`}
+              key={option.value}
+            >
+              <input
+                type="checkbox"
+                checked={isSelected}
+                onChange={(event) =>
+                  onChange(option.value, event.target.checked)
+                }
+              />
+              {option.label}
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
+
+function CSVProviderSection({
+  selectedCsvFile,
+  lastCsvUpload,
+  isUploadingCsv,
+  onCsvFileChange,
+  onDownloadCsvTemplate,
+  onUploadCsv,
+}) {
+  return (
+    <div className="toolbar-card">
+      <div className="section-header">
+        <div>
+          <h2>CSV Provider</h2>
+          <p>
+            Upload a CSV file to replace the local CSV bond universe. Then
+            press Discovery.
+          </p>
+        </div>
+      </div>
+
+      <div className="form-grid">
+        <label>
+          CSV File
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            onChange={onCsvFileChange}
+          />
+        </label>
+
+        <label>
+          Selected File
+          <input
+            type="text"
+            value={selectedCsvFile?.name || "No file selected"}
+            readOnly
+          />
+        </label>
+      </div>
+
+      <div className="form-actions">
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={onDownloadCsvTemplate}
+        >
+          Download CSV Template
+        </button>
+
+        <button
+          type="button"
+          className="primary-button"
+          onClick={onUploadCsv}
+          disabled={isUploadingCsv || !selectedCsvFile}
+        >
+          {isUploadingCsv ? "Uploading..." : "Upload CSV"}
+        </button>
+      </div>
+
+      {lastCsvUpload && (
+        <p className="helper-text">
+          Uploaded rows: {lastCsvUpload.row_count}. Stored as CSV Provider
+          universe.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function AIResearchProviderSection({
+  isGenerating,
+  isImporting,
+  generatedJsonText,
+  qualityWarnings,
+  lastImport,
+}) {
+  return (
+    <div className="toolbar-card">
+      <div className="section-header">
+        <div>
+          <h2>AI Research Provider</h2>
+          <p>
+            Press Discovery to search the web through Puter.js, generate
+            structured JSON, import it into Django and display valid candidates.
+          </p>
+        </div>
+      </div>
+
+      <div className="warning-box">
+        AI-researched data is not an official live market feed. The backend
+        validates the JSON and calculates missing YTM/duration only when
+        market price, coupon and maturity exist.
+      </div>
+
+      {(isGenerating || isImporting) && (
+        <div className="loading-text">
+          {isGenerating
+            ? "AI Research Agent is searching for active bonds..."
+            : "Backend is validating and importing AI research results..."}
+        </div>
+      )}
+
+      {qualityWarnings.length > 0 && (
+        <div className="warning-box">
+          <strong>Quality warnings:</strong>
           <ul>
-            {result.errors.map((error, index) => (
+            {qualityWarnings.map((warning, index) => (
+              <li key={`${warning}-${index}`}>{warning}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {lastImport && (
+        <div className="summary-card-grid">
+          <DiscoveryRunCard title="Found" value={lastImport.total_found} />
+          <DiscoveryRunCard title="Created" value={lastImport.total_created} />
+          <DiscoveryRunCard title="Updated" value={lastImport.total_updated} />
+          <DiscoveryRunCard title="Skipped" value={lastImport.total_skipped} />
+        </div>
+      )}
+
+      {lastImport?.errors?.length > 0 && (
+        <div className="error-box">
+          <strong>Import errors:</strong>
+          <ul>
+            {lastImport.errors.map((error, index) => (
               <li key={`${error}-${index}`}>{error}</li>
             ))}
           </ul>
         </div>
       )}
 
-      {result.sample_candidates?.length > 0 && (
-        <div className="table-scroll">
-          <table className="wide-table">
+      {generatedJsonText && (
+        <details className="json-details">
+          <summary>Generated AI JSON</summary>
+          <textarea value={generatedJsonText} rows="10" readOnly />
+        </details>
+      )}
+    </div>
+  );
+}
+
+function CandidateBondsTable({
+  candidates,
+  isLoading,
+  isClearingResults,
+  isDiscovering,
+  candidateActionId,
+  onClearCurrentResults,
+  onAddToWatchlist,
+  onIgnore,
+}) {
+  return (
+    <div className="table-card">
+      <div className="section-header section-header-with-actions">
+        <div>
+          <h2>Candidate Bonds</h2>
+          <p>
+            Active candidates that passed backend validation and are not already
+            in your Portfolio or Watchlist.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={onClearCurrentResults}
+          disabled={
+            isClearingResults ||
+            isDiscovering ||
+            candidates.length === 0
+          }
+        >
+          {isClearingResults ? "Clearing..." : "Clear Current Results"}
+        </button>
+      </div>
+
+      {isLoading ? (
+        <div className="loading-text">Loading discovered bonds...</div>
+      ) : (
+        <div className="table-scroll candidate-table-scroll">
+          <table className="wide-table candidate-bonds-table">
             <thead>
               <tr>
+                <th>Bond</th>
                 <th>ISIN</th>
-                <th>Name</th>
-                <th>Issuer</th>
                 <th>Country</th>
+                <th>Issuer</th>
                 <th>Currency</th>
                 <th>Rating</th>
                 <th>Maturity</th>
+                <th>Coupon</th>
                 <th>Market Price</th>
                 <th>YTM</th>
                 <th>Duration</th>
+                <th>Source</th>
+                <th>Confidence</th>
+                <th>Review</th>
+                <th>Risk</th>
+                <th>Signal</th>
+                <th>Actions</th>
               </tr>
             </thead>
 
             <tbody>
-              {result.sample_candidates.map((candidate) => (
-                <tr key={candidate.isin}>
-                  <td>{candidate.isin}</td>
-                  <td>{candidate.name}</td>
-                  <td>{candidate.issuer}</td>
-                  <td>{candidate.country || "-"}</td>
-                  <td>{candidate.currency}</td>
-                  <td>{candidate.credit_rating}</td>
-                  <td>{candidate.maturity_date}</td>
-                  <td>{candidate.market_price || "-"}</td>
-                  <td>{candidate.ytm || "-"}</td>
-                  <td>{candidate.duration || "-"}</td>
+              {candidates.length === 0 ? (
+                <tr>
+                  <td colSpan="17">
+                    No candidates are available. Adjust filters, upload CSV or
+                    run AI Research Provider.
+                  </td>
                 </tr>
-              ))}
+              ) : (
+                candidates.map((candidate) => (
+                  <tr key={candidate.id}>
+                    <td className="candidate-name-cell">{candidate.name}</td>
+                    <td className="candidate-isin-cell">{candidate.isin}</td>
+                    <td>{candidate.country || "-"}</td>
+                    <td className="candidate-issuer-cell">
+                      {candidate.issuer}
+                    </td>
+                    <td>{candidate.currency}</td>
+                    <td>{candidate.credit_rating}</td>
+                    <td>{candidate.maturity_date}</td>
+                    <td>{formatPercent(candidate.coupon_rate, 3)}</td>
+
+                    <td>
+                      {candidate.market_price
+                        ? formatMoney(
+                            candidate.market_price,
+                            candidate.currency,
+                            4
+                          )
+                        : "-"}
+                    </td>
+
+                    <td>{formatPercent(candidate.ytm, 2)}</td>
+                    <td>{formatDecimal(candidate.duration, 4)}</td>
+
+                    <td className="candidate-source-cell">
+                      <CandidateSource candidate={candidate} />
+                    </td>
+
+                    <td>
+                      {candidate.confidence_label ||
+                        candidate.confidence ||
+                        "-"}
+                    </td>
+
+                    <td>
+                      {candidate.review_status_label ||
+                        candidate.review_status ||
+                        "-"}
+                    </td>
+
+                    <td className="candidate-risk-cell">
+                      <RiskBadge
+                        riskLevel={candidate.preview_risk_level}
+                        label={candidate.preview_risk_label}
+                      />
+                    </td>
+
+                    <td className="candidate-signal-cell">
+                      <SignalBadge
+                        signal={candidate.preview_signal}
+                        label={candidate.preview_signal_label}
+                      />
+                    </td>
+
+                    <td>
+                      <div className="table-action-buttons">
+                        <button
+                          type="button"
+                          className="primary-button small-button"
+                          disabled={candidateActionId === candidate.id}
+                          onClick={() => onAddToWatchlist(candidate.id)}
+                        >
+                          {candidateActionId === candidate.id
+                            ? "Adding..."
+                            : "Add"}
+                        </button>
+
+                        <button
+                          type="button"
+                          className="secondary-button small-button"
+                          disabled={candidateActionId === candidate.id}
+                          onClick={() => onIgnore(candidate.id)}
+                        >
+                          Ignore
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -1205,6 +1212,67 @@ function escapeCsvValue(value) {
   }
 
   return stringValue;
+}
+
+function buildAIQualityWarnings(payload) {
+  /**
+   * Build client-side quality warnings before backend import.
+   */
+  const warnings = [];
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+
+  items.forEach((item, index) => {
+    const itemLabel = item?.isin || item?.name || `Item ${index + 1}`;
+    const missingFields = Array.isArray(item?.missing_fields)
+      ? item.missing_fields
+      : [];
+
+    if (!item?.market_price) {
+      warnings.push(`${itemLabel}: missing market_price.`);
+    }
+
+    if (!item?.credit_rating) {
+      warnings.push(`${itemLabel}: missing credit_rating.`);
+    }
+
+    if (!item?.primary_source_url) {
+      warnings.push(`${itemLabel}: missing primary_source_url.`);
+    }
+
+    if (missingFields.length > 3) {
+      warnings.push(`${itemLabel}: has more than 3 missing fields.`);
+    }
+  });
+
+  return warnings.slice(0, 12);
+}
+
+function getDiscoveryButtonLabel({
+  isAIResearchSource,
+  isGeneratingAIResearchJson,
+  isImportingAIResearchJson,
+  isRunningDiscovery,
+}) {
+  /**
+   * Return the main Discovery button label.
+   */
+  if (isAIResearchSource) {
+    if (isGeneratingAIResearchJson) {
+      return "Searching...";
+    }
+
+    if (isImportingAIResearchJson) {
+      return "Importing...";
+    }
+
+    return "Discovery";
+  }
+
+  if (isRunningDiscovery) {
+    return "Running...";
+  }
+
+  return "Discovery";
 }
 
 function getApiErrorMessage(error, fallbackMessage) {

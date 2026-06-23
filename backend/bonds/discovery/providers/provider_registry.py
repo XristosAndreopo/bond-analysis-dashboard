@@ -1,31 +1,25 @@
 """
 Provider registry for the Bond Discovery Engine.
 
-This module centralizes supported discovery providers.
+This module centralizes backend discovery providers.
 
-The discovery service should not import every provider directly. Instead, it
-asks the registry for the requested provider. This keeps the discovery service
-clean and makes it easier to add real external providers later.
+Current data strategy:
+- CSV Provider is the only backend provider that run_bond_discovery() executes.
+- AI Research is handled by the AI research import flow, not by this registry.
+  The frontend uses Puter.js to produce structured JSON and the backend imports
+  it through /api/ai-research/import-discovery/.
 
-Supported MVP providers:
-- static_provider
-- csv_provider
-- external_json_provider
+Static sample discovery has been removed so Discover Bonds focuses on real
+user-provided CSV data and AI-researched candidates.
 """
 
-from bonds.discovery.providers import (
-    csv_provider,
-    external_json_provider,
-    static_provider,
-)
+from bonds.discovery.providers import csv_provider
 
 
-DEFAULT_DISCOVERY_SOURCE = "static_provider"
+DEFAULT_DISCOVERY_SOURCE = "csv_provider"
 
 SUPPORTED_PROVIDERS = {
-    "static_provider": static_provider,
     "csv_provider": csv_provider,
-    "external_json_provider": external_json_provider,
 }
 
 
@@ -76,8 +70,8 @@ def get_provider(source=None):
         supported_sources = ", ".join(get_supported_provider_names())
 
         raise ProviderRegistryError(
-            f"Unsupported discovery source '{source}'. "
-            f"Supported sources: {supported_sources}."
+            f"Unsupported backend discovery source '{source}'. "
+            f"Supported backend sources: {supported_sources}."
         )
 
     return provider
@@ -85,7 +79,7 @@ def get_provider(source=None):
 
 def get_supported_provider_names():
     """
-    Return supported provider names.
+    Return supported backend provider names.
 
     Returns:
         list[str]: Sorted supported provider names.

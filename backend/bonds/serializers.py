@@ -431,7 +431,8 @@ class RunBondDiscoverySerializer(serializers.Serializer):
             "source": "csv_provider",
             "min_rating": "BBB-",
             "currencies": ["EUR", "USD"],
-            "countries": ["GR", "US"]
+            "countries": ["GR", "US"],
+            "bond_types": ["GOVERNMENT", "CORPORATE"]
         }
 
     All fields are optional for the MVP.
@@ -453,6 +454,12 @@ class RunBondDiscoverySerializer(serializers.Serializer):
     )
     countries = serializers.ListField(
         child=serializers.CharField(max_length=2),
+        required=False,
+        allow_empty=True,
+        default=list,
+    )
+    bond_types = serializers.ListField(
+        child=serializers.CharField(max_length=30),
         required=False,
         allow_empty=True,
         default=list,
@@ -528,3 +535,40 @@ class RunBondDiscoverySerializer(serializers.Serializer):
                 normalized_countries.append(normalized_country)
 
         return normalized_countries
+
+    def validate_bond_types(self, value):
+        """
+        Normalize bond type filters.
+
+        The current BondCandidate model does not store bond_type yet. The
+        discovery service can still use provider/AI raw bond_type values when
+        they exist.
+        """
+        supported_bond_types = {
+            "GOVERNMENT",
+            "CORPORATE",
+            "TREASURY",
+            "MUNICIPAL",
+            "OTHER",
+        }
+        normalized_bond_types = []
+
+        for bond_type in value:
+            if not bond_type:
+                continue
+
+            normalized_bond_type = bond_type.upper().strip()
+
+            if normalized_bond_type not in supported_bond_types:
+                supported_text = ", ".join(sorted(supported_bond_types))
+
+                raise serializers.ValidationError(
+                    f"Supported bond types: {supported_text}."
+                )
+
+            if normalized_bond_type not in normalized_bond_types:
+                normalized_bond_types.append(normalized_bond_type)
+
+        return normalized_bond_types
+
+
