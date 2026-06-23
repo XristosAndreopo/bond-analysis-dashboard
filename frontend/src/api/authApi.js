@@ -1,7 +1,11 @@
 /**
  * Authentication API functions.
  *
- * This file contains all requests related to login and current user retrieval.
+ * This file contains all requests related to:
+ * - login
+ * - signup
+ * - forgot password
+ * - current authenticated user retrieval
  */
 
 import apiClient from "./apiClient";
@@ -17,6 +21,35 @@ export async function loginUser(username, password) {
   const response = await apiClient.post("/auth/token/", {
     username,
     password,
+  });
+
+  return response.data;
+}
+
+/**
+ * Register a new user account.
+ *
+ * @param {object} payload - Signup form data.
+ * @returns {Promise<object>} Created account response.
+ */
+export async function signupUser(payload) {
+  const response = await apiClient.post("/accounts/signup/", payload);
+
+  return response.data;
+}
+
+/**
+ * Request password reset instructions.
+ *
+ * The backend intentionally returns a generic response so it does not reveal
+ * whether the submitted email exists.
+ *
+ * @param {string} email - User email address.
+ * @returns {Promise<object>} Forgot password response.
+ */
+export async function requestPasswordReset(email) {
+  const response = await apiClient.post("/accounts/forgot-password/", {
+    email,
   });
 
   return response.data;

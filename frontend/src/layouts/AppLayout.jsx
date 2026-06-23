@@ -1,28 +1,28 @@
 /**
  * Application layout.
  *
- * This layout wraps all authenticated pages.
+ * This layout wraps authenticated pages.
  *
  * It contains:
  * - the left vertical Sidebar
- * - the main content area where child routes are rendered
+ * - the main content area
  *
- * Important:
- *   The <Outlet /> component is required by React Router.
- *   Without it, the sidebar appears but the selected page content remains blank.
+ * The component supports two rendering modes:
+ * - children mode: used when a route wants to render a specific page directly
+ * - Outlet mode: used by nested React Router routes
  */
 
 import { Outlet } from "react-router-dom";
 
 import Sidebar from "../components/Sidebar";
 
-function AppLayout() {
+function AppLayout({ children }) {
   return (
     <div className="app-shell">
       <Sidebar />
 
       <main className="main-content">
-        <Outlet />
+        {children || <Outlet />}
       </main>
     </div>
   );

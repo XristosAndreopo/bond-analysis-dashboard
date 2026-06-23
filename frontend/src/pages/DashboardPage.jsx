@@ -1,29 +1,38 @@
 /**
  * Dashboard page.
  *
- * Shows a quick overview of the user's Portfolio bonds, including:
- * - portfolio summary
- * - signal distribution
- * - risk distribution
- * - top risk bond
- * - best value bond based on IV vs Market Price
+ * For authenticated users:
+ * - shows a quick overview of Portfolio bonds
+ * - displays signal/risk distributions
+ * - displays top risk and best value bond
+ *
+ * For unauthenticated visitors:
+ * - shows a public dashboard preview without private data
+ * - offers Login and Create Account actions
  */
 
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { fetchDashboard } from "../api/portfolioApi";
+import { isAuthenticated } from "../auth/authService";
 import Disclaimer from "../components/Disclaimer";
 import RiskBadge from "../components/RiskBadge";
 import SignalBadge from "../components/SignalBadge";
 import { formatDecimal, formatMoney, formatPercent } from "../utils/formatters";
 
 function DashboardPage() {
+  const authenticated = isAuthenticated();
+
   const [dashboardData, setDashboardData] = useState(null);
   const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
     async function loadDashboard() {
+      if (!authenticated) {
+        return;
+      }
+
       try {
         const data = await fetchDashboard();
         setDashboardData(data);
@@ -33,7 +42,7 @@ function DashboardPage() {
     }
 
     loadDashboard();
-  }, []);
+  }, [authenticated]);
 
   const dashboardInsights = useMemo(() => {
     if (!dashboardData) {
@@ -54,6 +63,10 @@ function DashboardPage() {
       bestValueItem: getBestValueItem(portfolioItems),
     };
   }, [dashboardData]);
+
+  if (!authenticated) {
+    return <PublicDashboardPreview />;
+  }
 
   if (errorMessage) {
     return <div className="error-box">{errorMessage}</div>;
@@ -200,6 +213,99 @@ function DashboardPage() {
         </div>
       </div>
     </section>
+  );
+}
+
+function PublicDashboardPreview() {
+  return (
+    <main className="public-dashboard-page">
+      <section className="public-dashboard-hero">
+        <div className="public-dashboard-nav">
+          <Link className="auth-logo-link" to="/dashboard">
+            <span className="auth-logo-mark">B</span>
+            <span>Bond Analysis Dashboard</span>
+          </Link>
+
+          <div className="public-dashboard-nav-actions">
+            <Link className="secondary-link-button" to="/login">
+              Login
+            </Link>
+            <Link className="primary-link-button" to="/signup">
+              Create account
+            </Link>
+          </div>
+        </div>
+
+        <div className="public-dashboard-content">
+          <span className="auth-hero-pill">Public preview</span>
+          <h1>Analyze bonds, track risk and build your watchlist.</h1>
+          <p>
+            Συνδέσου για να δεις πραγματικά δεδομένα Portfolio, Watchlist,
+            Discovery candidates και αναλυτικά risk signals.
+          </p>
+
+          <div className="public-dashboard-actions">
+            <Link className="primary-link-button" to="/login">
+              Login to your dashboard
+            </Link>
+            <Link className="secondary-link-button" to="/signup">
+              Create free account
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="public-dashboard-preview-section">
+        <div className="summary-grid public-summary-grid">
+          <PreviewSummaryCard label="Portfolio Value" value="—" />
+          <PreviewSummaryCard label="Portfolio Duration" value="—" />
+          <PreviewSummaryCard label="Risk Level" value="—" />
+          <PreviewSummaryCard label="Watchlist Bonds" value="—" />
+        </div>
+
+        <div className="dashboard-insights-grid">
+          <InsightCard title="Portfolio Preview">
+            <div className="public-preview-list">
+              <PreviewRow label="Risk signals" value="Login required" />
+              <PreviewRow label="Bond analysis" value="Private data" />
+              <PreviewRow label="Market data" value="Protected" />
+            </div>
+          </InsightCard>
+
+          <InsightCard title="What you can do">
+            <div className="public-preview-list">
+              <PreviewRow label="Track portfolio bonds" value="✓" />
+              <PreviewRow label="Use AI discovery" value="✓" />
+              <PreviewRow label="Build a watchlist" value="✓" />
+            </div>
+          </InsightCard>
+        </div>
+
+        <div className="disclaimer-box">
+          This dashboard is for educational and analytical purposes only. It is
+          not financial advice.
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function PreviewSummaryCard({ label, value }) {
+  return (
+    <div className="summary-card public-preview-card">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>Available after login</small>
+    </div>
+  );
+}
+
+function PreviewRow({ label, value }) {
+  return (
+    <div className="distribution-row">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
   );
 }
 
