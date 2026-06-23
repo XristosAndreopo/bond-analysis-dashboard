@@ -1,17 +1,22 @@
 """
 API views for AI-researched bond data.
 
-These endpoints support two workflows:
+These endpoints support three workflows:
 
 1. Backend OpenAI discovery
    The frontend sends filters to Django. Django calls OpenAI Responses API with
    hosted web search, validates structured JSON, imports valid candidates and
    returns the resulting Candidate Bonds.
 
-2. Manual structured JSON import
-   The frontend or a developer may still send an already-produced structured
-   JSON payload to the import endpoints. This remains useful for testing and
-   future workflows.
+2. Backend OpenAI Watchlist market refresh
+   The frontend requests a refresh for the authenticated user's active
+   Watchlist ISINs. Django calls OpenAI, imports valid BondMarketData rows, and
+   the frontend reloads the Watchlist.
+
+3. Manual structured JSON import
+   The frontend or a developer may still send already-produced structured JSON
+   payloads to the import endpoints. This remains useful for testing and future
+   workflows.
 
 Important:
 - AI-researched data is not treated as official live market feed data.
@@ -33,6 +38,7 @@ from bonds.ai_research.import_service import (
 from bonds.ai_research.services import (
     AIResearchServiceError,
     run_openai_discovery_and_import,
+    run_openai_market_refresh_and_import,
 )
 from bonds.discovery.discovery_service import get_visible_candidates
 from bonds.discovery.rating_utils import (
@@ -42,6 +48,7 @@ from bonds.discovery.rating_utils import (
 )
 from bonds.models import DiscoveryRun
 from bonds.serializers import BondCandidateSerializer, DiscoveryRunSerializer
+from portfolios.models import UserBond
 
 
 class AIResearchDiscoveryRequestSerializer(serializers.Serializer):
@@ -174,6 +181,43 @@ class AIResearchDiscoveryRequestSerializer(serializers.Serializer):
         return normalized_bond_types
 
 
+class AIResearchWatchlistMarketRefreshRequestSerializer(serializers.Serializer):
+    """
+    Serializer for refreshing active Watchlist market data.
+
+    Expected payload:
+        {
+            "base_currency": "EUR",
+            "max_items": 12
+        }
+    """
+
+    base_currency = serializers.CharField(
+        required=False,
+        max_length=3,
+        default="EUR",
+    )
+    max_items = serializers.IntegerField(
+        required=False,
+        min_value=1,
+        max_value=20,
+        default=12,
+    )
+
+    def validate_base_currency(self, value):
+        """
+        Normalize base currency.
+        """
+        normalized_currency = str(value or "EUR").strip().upper()
+
+        if len(normalized_currency) != 3:
+            raise serializers.ValidationError(
+                "Base currency must be a 3-letter code."
+            )
+
+        return normalized_currency
+
+
 class AIResearchDiscoveryRunAPIView(APIView):
     """
     Run OpenAI-backed bond discovery for the authenticated user.
@@ -244,6 +288,84 @@ class AIResearchDiscoveryRunAPIView(APIView):
                     many=True,
                 ).data,
                 "import_summary": import_summary,
+                "research_payload": result["research_payload"],
+                "warnings": result["research_payload"].get("warnings", []),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class AIResearchWatchlistMarketRefreshAPIView(APIView):
+    """
+    Refresh market data for the authenticated user's active Watchlist bonds.
+
+    Endpoint:
+        POST /api/ai-research/watchlist-market-refresh/
+
+    This endpoint does not create new Bond records. It only researches ISINs
+    already present in the user's active Watchlist and imports BondMarketData
+    rows for matching existing Bond master records.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        """
+        Run OpenAI market refresh for active Watchlist ISINs.
+        """
+        serializer = AIResearchWatchlistMarketRefreshRequestSerializer(
+            data=request.data,
+        )
+        serializer.is_valid(raise_exception=True)
+
+        base_currency = serializer.validated_data["base_currency"]
+        max_items = serializer.validated_data["max_items"]
+
+        isins = list(
+            UserBond.objects.filter(
+                user=request.user,
+                holding_type=UserBond.HoldingType.WATCHLIST,
+                is_active=True,
+            )
+            .select_related("bond")
+            .order_by("bond__isin")
+            .values_list("bond__isin", flat=True)
+            .distinct()[:max_items]
+        )
+
+        if not isins:
+            return Response(
+                {
+                    "detail": "There are no active Watchlist bonds to refresh.",
+                    "requested_isins": [],
+                    "import_summary": {
+                        "total_found": 0,
+                        "total_created": 0,
+                        "total_updated": 0,
+                        "total_skipped": 0,
+                        "errors": [],
+                    },
+                    "warnings": [],
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        try:
+            result = run_openai_market_refresh_and_import(
+                isins=isins,
+                base_currency=base_currency,
+            )
+        except AIResearchServiceError as exc:
+            return Response(
+                {"detail": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            {
+                "detail": "Watchlist market data refresh completed.",
+                "requested_isins": isins,
+                "import_summary": result["import_summary"],
                 "research_payload": result["research_payload"],
                 "warnings": result["research_payload"].get("warnings", []),
             },

@@ -51,6 +51,32 @@ export async function fetchWatchlist(baseCurrency = "EUR") {
 }
 
 /**
+ * Refresh market data for active Watchlist bonds through backend AI research.
+ *
+ * The backend researches only ISINs that already exist in the authenticated
+ * user's active Watchlist. It imports valid BondMarketData rows and keeps
+ * source/confidence/review metadata.
+ *
+ * @param {string} baseCurrency - Selected base currency for context.
+ * @param {number} maxItems - Maximum Watchlist ISINs to refresh in one run.
+ * @returns {Promise<object>} Refresh result.
+ */
+export async function updateWatchlistMarketData(
+  baseCurrency = "EUR",
+  maxItems = 12
+) {
+  const response = await apiClient.post(
+    "/ai-research/watchlist-market-refresh/",
+    {
+      base_currency: baseCurrency,
+      max_items: maxItems,
+    }
+  );
+
+  return response.data;
+}
+
+/**
  * Fetch one user bond detail.
  *
  * @param {number|string} positionId - UserBond id.

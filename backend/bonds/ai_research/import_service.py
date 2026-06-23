@@ -338,18 +338,52 @@ def _import_single_market_item(item: dict[str, Any]) -> str:
             f"{isin} skipped: bond does not exist in the application."
         )
 
-    market_price = _parse_decimal(item.get("market_price"))
+    raw_market_price = _parse_decimal(item.get("market_price"))
+    market_price = raw_market_price
+    market_price_fallback_note = ""
+    market_price_fallback_payload: dict[str, Any] | None = None
 
     if market_price is None:
-        raise AIResearchImportError(
-            f"{isin} skipped: market_price is required for BondMarketData."
-        )
+        fallback_market_data = _get_latest_market_data_with_price(bond)
 
-    quote_date = _parse_date(item.get("quote_date")) or timezone.localdate()
-    source = _truncate(
-        _normalize_text(item.get("primary_source_name")) or AI_RESEARCH_SOURCE,
-        100,
-    )
+        if fallback_market_data is None:
+            raise AIResearchImportError(
+                f"{isin} skipped: market_price is required for BondMarketData "
+                "and no previous stored market price exists."
+            )
+
+        market_price = fallback_market_data.market_price
+        market_price_fallback_note = (
+            "Market price was not verified in this AI refresh. "
+            f"The previous stored market price {fallback_market_data.market_price} "
+            f"from {fallback_market_data.quote_date} / "
+            f"{fallback_market_data.source} was carried forward. "
+            "Treat this record as NEEDS_REVIEW."
+        )
+        market_price_fallback_payload = {
+            "used": True,
+            "reason": "market_price missing from current AI refresh",
+            "fallback_market_data_id": fallback_market_data.id,
+            "fallback_quote_date": fallback_market_data.quote_date.isoformat(),
+            "fallback_source": fallback_market_data.source,
+            "fallback_market_price": str(fallback_market_data.market_price),
+        }
+
+    ai_reported_quote_date = _parse_date(item.get("quote_date"))
+    quote_date = timezone.localdate()
+
+    # Use a stable internal source and a stable daily import date for AI market
+    # refresh records.
+    #
+    # BondMarketData has a uniqueness rule on (bond, quote_date, source).
+    # If we use the AI-selected primary_source_name or AI-reported quote_date
+    # directly, the same daily refresh can create duplicate rows whenever the
+    # AI finds a different public source or a different source quote date on
+    # the next run.
+    #
+    # The real public source and AI-reported quote date are still preserved in
+    # source_url, research_payload, and notes.
+    source = AI_RESEARCH_SOURCE
 
     _update_bond_identity_from_market_item(
         bond=bond,
@@ -376,14 +410,50 @@ def _import_single_market_item(item: dict[str, Any]) -> str:
         missing_fields=_normalize_list(item.get("missing_fields")),
         calculated_fields=metric_result["calculated_fields"],
     )
+
+    if raw_market_price is None:
+        missing_fields = _append_unique_missing_field(
+            missing_fields=missing_fields,
+            field_name="market_price",
+        )
+
     research_payload = _build_research_payload_with_backend_calculations(
         item=item,
         metric_result=metric_result,
     )
+
+    research_payload["_ai_market_refresh_import"] = {
+        "stored_quote_date": quote_date.isoformat(),
+        "ai_reported_quote_date": (
+            ai_reported_quote_date.isoformat()
+            if ai_reported_quote_date is not None
+            else None
+        ),
+        "stored_source": source,
+        "ai_primary_source_name": _normalize_text(item.get("primary_source_name")),
+        "reason": (
+            "AI market refresh records use a stable daily import quote_date "
+            "and stable internal source to prevent duplicate rows for the same "
+            "bond on repeated refreshes within the same day."
+        ),
+    }
+
+    if market_price_fallback_payload is not None:
+        research_payload["_market_price_fallback"] = market_price_fallback_payload
+
     notes = _build_research_notes_with_backend_calculations(
         research_notes=_normalize_text(item.get("research_notes")),
         metric_result=metric_result,
     )
+    notes = _append_note(
+        notes,
+        _build_stable_ai_market_refresh_note(
+            stored_quote_date=quote_date,
+            ai_reported_quote_date=ai_reported_quote_date,
+            source=source,
+        ),
+    )
+    notes = _append_note(notes, market_price_fallback_note)
 
     market_data, created = BondMarketData.objects.update_or_create(
         bond=bond,
@@ -404,9 +474,17 @@ def _import_single_market_item(item: dict[str, Any]) -> str:
             "data_origin": DataOrigin.AI_RESEARCH,
             "is_manual": False,
             "retrieved_at": _parse_datetime(item.get("retrieved_at")),
-            "confidence": _normalize_confidence(item.get("confidence")),
-            "needs_review": bool(item.get("needs_review", True)),
-            "review_status": _normalize_review_status(item.get("review_status")),
+            "confidence": (
+                ResearchConfidence.LOW
+                if raw_market_price is None
+                else _normalize_confidence(item.get("confidence"))
+            ),
+            "needs_review": bool(item.get("needs_review", True)) or raw_market_price is None,
+            "review_status": (
+                ReviewStatus.NEEDS_REVIEW
+                if raw_market_price is None
+                else _normalize_review_status(item.get("review_status"))
+            ),
             "missing_fields": missing_fields,
             "research_payload": research_payload,
             "notes": notes,
@@ -650,6 +728,79 @@ def _parse_datetime(value: Any) -> datetime | None:
     return parsed_datetime
 
 
+def _get_latest_market_data_with_price(bond: Bond) -> BondMarketData | None:
+    """
+    Return the latest existing market data row with a stored market price.
+
+    This is used only as a transparent fallback for market refresh runs where
+    the AI can verify yield or identity data but cannot verify a fresh public
+    price. The carried-forward price is clearly marked in notes, missing_fields
+    and research_payload.
+    """
+    return (
+        bond.market_data.exclude(market_price__isnull=True)
+        .order_by("-quote_date", "-created_at")
+        .first()
+    )
+
+
+def _append_unique_missing_field(
+    missing_fields: list[str],
+    field_name: str,
+) -> list[str]:
+    """
+    Append a missing field once while preserving the existing order.
+    """
+    normalized_existing = {field.lower() for field in missing_fields}
+
+    if field_name.lower() in normalized_existing:
+        return missing_fields
+
+    return [*missing_fields, field_name]
+
+
+def _append_note(base_note: str, extra_note: str) -> str:
+    """
+    Append an extra note when it exists.
+    """
+    base_note = base_note.strip()
+    extra_note = extra_note.strip()
+
+    if not extra_note:
+        return base_note
+
+    if not base_note:
+        return extra_note
+
+    return f"{base_note} {extra_note}"
+
+
+def _build_stable_ai_market_refresh_note(
+    stored_quote_date: date,
+    ai_reported_quote_date: date | None,
+    source: str,
+) -> str:
+    """
+    Build a note explaining the stable AI market refresh storage policy.
+
+    AI market refresh records are stored under a stable daily import date and
+    stable internal source to avoid duplicate rows when the AI finds different
+    public quote dates or source names on repeated runs.
+    """
+    ai_quote_date_text = (
+        ai_reported_quote_date.isoformat()
+        if ai_reported_quote_date is not None
+        else "not provided"
+    )
+
+    return (
+        "AI market refresh storage policy: this record is stored with "
+        f"quote_date {stored_quote_date.isoformat()} and source {source}. "
+        f"The AI-reported source quote date was {ai_quote_date_text}. "
+        "The original AI-reported source details remain in research_payload "
+        "and source_url."
+    )
+
 
 def _parse_integer(value: Any, default: int = 1) -> int:
     """
@@ -764,5 +915,7 @@ def _join_errors(errors: list[str]) -> str:
     Join validation errors into a readable message.
     """
     return " | ".join(errors)
+
+
 
 

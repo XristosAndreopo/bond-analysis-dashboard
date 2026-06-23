@@ -15,7 +15,10 @@ import json
 import os
 from typing import Any
 
-from bonds.ai_research.schemas import DISCOVERY_RESEARCH_RESULT_SCHEMA
+from bonds.ai_research.schemas import (
+    BOND_MARKET_RESEARCH_RESULT_SCHEMA,
+    DISCOVERY_RESEARCH_RESULT_SCHEMA,
+)
 
 
 DEFAULT_OPENAI_MODEL = "gpt-5.5"
@@ -35,7 +38,7 @@ def run_openai_discovery_research(
     user_prompt: str,
 ) -> dict[str, Any]:
     """
-    Run OpenAI Responses API web research and return parsed JSON.
+    Run OpenAI Responses API web research for bond discovery.
 
     Args:
         system_prompt: System instructions for safe research behavior.
@@ -43,6 +46,54 @@ def run_openai_discovery_research(
 
     Returns:
         Parsed DiscoveryResearchResult dictionary.
+    """
+    return _run_openai_structured_research(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        schema_definition=DISCOVERY_RESEARCH_RESULT_SCHEMA,
+        request_label="OpenAI discovery research",
+    )
+
+
+def run_openai_market_research(
+    system_prompt: str,
+    user_prompt: str,
+) -> dict[str, Any]:
+    """
+    Run OpenAI Responses API web research for market data refresh.
+
+    Args:
+        system_prompt: System instructions for safe research behavior.
+        user_prompt: Market refresh task prompt.
+
+    Returns:
+        Parsed BondMarketResearchResult dictionary.
+    """
+    return _run_openai_structured_research(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        schema_definition=BOND_MARKET_RESEARCH_RESULT_SCHEMA,
+        request_label="OpenAI market research",
+    )
+
+
+def _run_openai_structured_research(
+    system_prompt: str,
+    user_prompt: str,
+    schema_definition: dict[str, Any],
+    request_label: str,
+) -> dict[str, Any]:
+    """
+    Run an OpenAI structured web-search request and parse the JSON result.
+
+    Args:
+        system_prompt: System instructions.
+        user_prompt: User/task prompt.
+        schema_definition: JSON schema definition from schemas.py.
+        request_label: Human-readable label for error messages.
+
+    Returns:
+        Parsed JSON object.
 
     Raises:
         OpenAIResearchClientError: If configuration, API call, or JSON parsing
@@ -88,30 +139,30 @@ def run_openai_discovery_research(
             text={
                 "format": {
                     "type": "json_schema",
-                    "name": DISCOVERY_RESEARCH_RESULT_SCHEMA["name"],
+                    "name": schema_definition["name"],
                     "strict": True,
-                    "schema": DISCOVERY_RESEARCH_RESULT_SCHEMA["schema"],
+                    "schema": schema_definition["schema"],
                 }
             },
             max_output_tokens=max_output_tokens,
         )
     except Exception as exc:
         raise OpenAIResearchClientError(
-            f"OpenAI discovery research request failed: {exc}"
+            f"{request_label} request failed: {exc}"
         ) from exc
 
     output_text = _extract_response_output_text(response)
 
     if not output_text.strip():
         raise OpenAIResearchClientError(
-            "OpenAI returned an empty discovery research response."
+            f"{request_label} returned an empty response."
         )
 
     parsed_payload = _parse_json_payload(output_text)
 
     if not isinstance(parsed_payload, dict):
         raise OpenAIResearchClientError(
-            "OpenAI response must be a JSON object."
+            f"{request_label} response must be a JSON object."
         )
 
     return parsed_payload
@@ -171,10 +222,6 @@ def _get_max_output_tokens() -> int:
 def _extract_response_output_text(response: Any) -> str:
     """
     Extract text output from an OpenAI Responses API response.
-
-    The official SDK exposes output_text for normal text responses. This helper
-    also includes a fallback that walks through the response output structure,
-    which makes debugging easier if the SDK representation changes.
 
     Args:
         response: OpenAI Responses API response object.
@@ -275,10 +322,6 @@ def _strip_markdown_code_fence(text: str) -> str:
 def _extract_first_json_object(text: str) -> str:
     """
     Extract the first balanced JSON object from text.
-
-    This is a safe fallback for responses like:
-        Here is the JSON:
-        { ... }
 
     Args:
         text: Raw text.

@@ -10,6 +10,7 @@ This file exposes:
 - CSV upload endpoint
 - provider status endpoint
 - OpenAI AI research discovery endpoint
+- OpenAI Watchlist market refresh endpoint
 - AI research JSON import endpoints
 """
 
@@ -20,6 +21,7 @@ from .ai_research.views import (
     AIResearchDiscoveryImportAPIView,
     AIResearchDiscoveryRunAPIView,
     AIResearchMarketImportAPIView,
+    AIResearchWatchlistMarketRefreshAPIView,
 )
 from .discovery.provider_status_views import DiscoveryProviderStatusAPIView
 from .discovery.upload_views import BondUniverseCSVUploadAPIView
@@ -63,6 +65,11 @@ urlpatterns = [
         "ai-research/discover/",
         AIResearchDiscoveryRunAPIView.as_view(),
         name="ai-research-discover",
+    ),
+    path(
+        "ai-research/watchlist-market-refresh/",
+        AIResearchWatchlistMarketRefreshAPIView.as_view(),
+        name="ai-research-watchlist-market-refresh",
     ),
     path(
         "ai-research/import-discovery/",

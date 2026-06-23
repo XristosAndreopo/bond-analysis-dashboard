@@ -16,12 +16,17 @@
  * - The discount rate shown here is the effective discount rate used by the
  *   backend analysis. If market_required_return is missing, the backend uses
  *   YTM as fallback.
+ * - Update Prices uses AI-researched web data and keeps source/confidence
+ *   metadata. It is not an official live market feed.
  */
 
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { fetchWatchlist } from "../api/portfolioApi";
+import {
+  fetchWatchlist,
+  updateWatchlistMarketData,
+} from "../api/portfolioApi";
 import Disclaimer from "../components/Disclaimer";
 import RiskBadge from "../components/RiskBadge";
 import SignalBadge from "../components/SignalBadge";
@@ -32,12 +37,17 @@ import {
 } from "../utils/formatters";
 
 const BASE_CURRENCY_OPTIONS = ["EUR", "USD", "GBP"];
+const WATCHLIST_REFRESH_MAX_ITEMS = 12;
 
 function WatchlistPage() {
   const [watchlistData, setWatchlistData] = useState(null);
   const [baseCurrency, setBaseCurrency] = useState("EUR");
   const [isLoading, setIsLoading] = useState(true);
+  const [isUpdatingMarketData, setIsUpdatingMarketData] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+  const [updateWarnings, setUpdateWarnings] = useState([]);
+  const [updateErrors, setUpdateErrors] = useState([]);
 
   useEffect(() => {
     loadWatchlist();
@@ -61,6 +71,42 @@ function WatchlistPage() {
 
   function handleBaseCurrencyChange(event) {
     setBaseCurrency(event.target.value);
+  }
+
+  async function handleUpdateMarketData() {
+    setIsUpdatingMarketData(true);
+    setErrorMessage("");
+    setSuccessMessage("");
+    setUpdateWarnings([]);
+    setUpdateErrors([]);
+
+    try {
+      const result = await updateWatchlistMarketData(
+        baseCurrency,
+        WATCHLIST_REFRESH_MAX_ITEMS
+      );
+
+      const summary = result.import_summary || {};
+      const createdCount = summary.total_created || 0;
+      const updatedCount = summary.total_updated || 0;
+      const skippedCount = summary.total_skipped || 0;
+
+      setSuccessMessage(
+        `Watchlist market data updated. Created: ${createdCount}, ` +
+          `updated: ${updatedCount}, skipped: ${skippedCount}.`
+      );
+      setUpdateWarnings(result.warnings || []);
+      setUpdateErrors(summary.errors || []);
+
+      await loadWatchlist();
+    } catch (error) {
+      setErrorMessage(
+        error?.response?.data?.detail ||
+          "Could not update Watchlist market data."
+      );
+    } finally {
+      setIsUpdatingMarketData(false);
+    }
   }
 
   const rows = watchlistData?.items || [];
@@ -91,6 +137,15 @@ function WatchlistPage() {
             </select>
           </label>
 
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={handleUpdateMarketData}
+            disabled={isUpdatingMarketData || rows.length === 0}
+          >
+            {isUpdatingMarketData ? "Updating prices..." : "Update Prices"}
+          </button>
+
           <Link className="secondary-button" to="/discover-bonds">
             Discover Bonds
           </Link>
@@ -109,13 +164,38 @@ function WatchlistPage() {
         λαμβάνονται υπόψη όλα τα απαραίτητα στοιχεία.
       </div>
 
-      {errorMessage && <div className="error-box">{errorMessage}</div>}
+      <div className="info-box">
+        Το κουμπί Update Prices χρησιμοποιεί AI-researched δημόσιες πηγές για
+        ενημέρωση τιμών/YTM. Δεν είναι επίσημο live market feed. Έλεγχε πάντα
+        Source, Confidence και Review status.
+      </div>
 
-      {metrics.fx_warning && (
+      {errorMessage && <div className="error-box">{errorMessage}</div>}
+      {successMessage && <div className="success-box">{successMessage}</div>}
+
+      {updateWarnings.length > 0 && (
         <div className="warning-box">
-          {metrics.fx_warning}
+          <strong>Research warnings:</strong>
+          <ul className="compact-message-list">
+            {updateWarnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
         </div>
       )}
+
+      {updateErrors.length > 0 && (
+        <div className="warning-box">
+          <strong>Import notes:</strong>
+          <ul className="compact-message-list">
+            {updateErrors.map((error) => (
+              <li key={error}>{error}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {metrics.fx_warning && <div className="warning-box">{metrics.fx_warning}</div>}
 
       {isLoading ? (
         <div className="loading-text">Loading watchlist...</div>
@@ -132,7 +212,7 @@ function WatchlistPage() {
           </div>
 
           <div className="table-scroll">
-            <table>
+            <table className="wide-table">
               <thead>
                 <tr>
                   <th>Bond</th>
@@ -144,6 +224,9 @@ function WatchlistPage() {
                   <th>Converted Price</th>
                   <th>YTM</th>
                   <th>Discount Rate</th>
+                  <th>Source</th>
+                  <th>Last Updated</th>
+                  <th>Data Quality</th>
                   <th>Risk</th>
                   <th>Signal</th>
                   <th>Reasoning</th>
@@ -153,7 +236,7 @@ function WatchlistPage() {
               <tbody>
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan="12">
+                    <td colSpan="15">
                       There are no bonds in your Watchlist yet.
                     </td>
                   </tr>
@@ -208,6 +291,16 @@ function WatchlistPage() {
 
                         <td>
                           <DiscountRateCell marketData={marketData} />
+                        </td>
+
+                        <td>
+                          <MarketDataSourceCell marketData={marketData} />
+                        </td>
+
+                        <td>{formatDateTime(marketData?.retrieved_at)}</td>
+
+                        <td>
+                          <DataQualityCell marketData={marketData} />
                         </td>
 
                         <td>
@@ -267,6 +360,48 @@ function DiscountRateCell({ marketData }) {
   );
 }
 
+function MarketDataSourceCell({ marketData }) {
+  /**
+   * Display the source for latest market data.
+   */
+  if (!marketData) {
+    return "-";
+  }
+
+  const sourceLabel = marketData.source || marketData.data_origin_label || "Source";
+
+  if (!marketData.source_url) {
+    return sourceLabel;
+  }
+
+  return (
+    <a href={marketData.source_url} target="_blank" rel="noreferrer">
+      {sourceLabel}
+    </a>
+  );
+}
+
+function DataQualityCell({ marketData }) {
+  /**
+   * Display confidence and review status for AI-researched data.
+   */
+  if (!marketData) {
+    return "-";
+  }
+
+  const confidence = marketData.confidence_label || marketData.confidence || "-";
+  const reviewStatus =
+    marketData.review_status_label || marketData.review_status || "-";
+
+  return (
+    <div className="data-quality-cell">
+      <strong>{confidence}</strong>
+      <span>{reviewStatus}</span>
+      {marketData.needs_review && <small>Needs review</small>}
+    </div>
+  );
+}
+
 function getDiscountRateSourceLabel(marketData) {
   /**
    * Return a small explanation for the discount rate source.
@@ -280,6 +415,23 @@ function getDiscountRateSourceLabel(marketData) {
   }
 
   return "No rate source";
+}
+
+function formatDateTime(value) {
+  /**
+   * Format ISO date/datetime values safely for display.
+   */
+  if (!value) {
+    return "-";
+  }
+
+  const parsedDate = new Date(value);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return value;
+  }
+
+  return parsedDate.toLocaleString();
 }
 
 export default WatchlistPage;
