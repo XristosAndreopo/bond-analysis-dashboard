@@ -8,7 +8,8 @@
  * - lets the user test the external JSON/API provider safely
  * - lets the user download a CSV template
  * - lets the user upload a CSV bond universe
- * - lets the user import AI-researched JSON
+ * - lets the user generate AI-researched JSON through Puter.js
+ * - lets the user import AI-researched JSON into the backend
  * - lets the user choose discovery filters
  * - asks the backend to run discovery
  * - displays validated candidates
@@ -44,6 +45,7 @@ import {
 } from "../api/discoveryApi";
 import RiskBadge from "../components/RiskBadge";
 import SignalBadge from "../components/SignalBadge";
+import { generateDiscoveryResearchJson } from "../services/puterAIResearchService";
 import {
   formatDecimal,
   formatMoney,
@@ -150,6 +152,7 @@ function DiscoverBondsPage() {
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [selectedCsvFile, setSelectedCsvFile] = useState(null);
   const [aiResearchJsonText, setAIResearchJsonText] = useState("");
+
   const [candidates, setCandidates] = useState([]);
   const [lastDiscoveryRun, setLastDiscoveryRun] = useState(null);
   const [lastCsvUpload, setLastCsvUpload] = useState(null);
@@ -163,6 +166,8 @@ function DiscoverBondsPage() {
     useState(false);
   const [isRunningDiscovery, setIsRunningDiscovery] = useState(false);
   const [isUploadingCsv, setIsUploadingCsv] = useState(false);
+  const [isGeneratingAIResearchJson, setIsGeneratingAIResearchJson] =
+    useState(false);
   const [isImportingAIResearchJson, setIsImportingAIResearchJson] =
     useState(false);
   const [isClearingResults, setIsClearingResults] = useState(false);
@@ -269,6 +274,18 @@ function DiscoverBondsPage() {
     };
   }
 
+  function buildAIResearchFilters() {
+    return {
+      countries: filters.country ? [filters.country] : [],
+      currencies: filters.currency ? [filters.currency] : [],
+      minimum_rating: filters.minRating || null,
+      maturity_from: null,
+      maturity_to: null,
+      issuer_types: [],
+      bond_types: [],
+    };
+  }
+
   async function handleUploadCsv() {
     if (!selectedCsvFile) {
       setErrorMessage("Please choose a CSV file first.");
@@ -296,6 +313,30 @@ function DiscoverBondsPage() {
       setErrorMessage(getApiErrorMessage(error, "Could not upload CSV file."));
     } finally {
       setIsUploadingCsv(false);
+    }
+  }
+
+  async function handleGenerateAIResearchJson() {
+    setIsGeneratingAIResearchJson(true);
+    setSuccessMessage("");
+    setErrorMessage("");
+    setLastAIResearchImport(null);
+
+    try {
+      const generatedPayload = await generateDiscoveryResearchJson(
+        buildAIResearchFilters()
+      );
+
+      setAIResearchJsonText(JSON.stringify(generatedPayload, null, 2));
+      setSuccessMessage(
+        "AI Research JSON generated successfully. Review it and press Import AI JSON."
+      );
+    } catch (error) {
+      setErrorMessage(
+        getApiErrorMessage(error, "Could not generate AI Research JSON.")
+      );
+    } finally {
+      setIsGeneratingAIResearchJson(false);
     }
   }
 
@@ -560,8 +601,9 @@ function DiscoverBondsPage() {
           <div>
             <h2>Import AI Research JSON</h2>
             <p>
-              Paste structured JSON produced by the AI Research Agent. The
-              backend validates it and imports candidates as AI-researched data.
+              Generate AI-researched JSON through Puter.js or paste structured
+              JSON manually. The backend validates it and imports candidates as
+              AI-researched data.
             </p>
           </div>
         </div>
@@ -586,8 +628,21 @@ function DiscoverBondsPage() {
           <button
             type="button"
             className="primary-button"
+            onClick={handleGenerateAIResearchJson}
+            disabled={isGeneratingAIResearchJson || isImportingAIResearchJson}
+          >
+            {isGeneratingAIResearchJson ? "Generating..." : "Generate AI JSON"}
+          </button>
+
+          <button
+            type="button"
+            className="primary-button"
             onClick={handleImportAIResearchJson}
-            disabled={isImportingAIResearchJson || !aiResearchJsonText.trim()}
+            disabled={
+              isGeneratingAIResearchJson ||
+              isImportingAIResearchJson ||
+              !aiResearchJsonText.trim()
+            }
           >
             {isImportingAIResearchJson ? "Importing..." : "Import AI JSON"}
           </button>
@@ -596,7 +651,11 @@ function DiscoverBondsPage() {
             type="button"
             className="secondary-button"
             onClick={handleClearAIResearchJson}
-            disabled={isImportingAIResearchJson || !aiResearchJsonText.trim()}
+            disabled={
+              isGeneratingAIResearchJson ||
+              isImportingAIResearchJson ||
+              !aiResearchJsonText.trim()
+            }
           >
             Clear JSON
           </button>
@@ -641,7 +700,7 @@ function DiscoverBondsPage() {
             <h2>Discovery Filters</h2>
             <p>
               Choose the source, minimum rating, currency and country filters
-              before running discovery.
+              before running discovery or generating AI research JSON.
             </p>
           </div>
         </div>
@@ -1104,11 +1163,7 @@ function CandidateSource({ candidate }) {
 
   return (
     <>
-      <a
-        href={candidate.source_url}
-        target="_blank"
-        rel="noreferrer"
-      >
+      <a href={candidate.source_url} target="_blank" rel="noreferrer">
         {candidate.source || "Open source"}
       </a>
       <br />
@@ -1154,11 +1209,12 @@ function escapeCsvValue(value) {
 
 function getApiErrorMessage(error, fallbackMessage) {
   /**
-   * Extract a safe API error message for user-facing alerts.
+   * Extract a safe API or client-side error message for user-facing alerts.
    */
   return (
     error?.response?.data?.detail ||
     error?.response?.data?.non_field_errors?.[0] ||
+    error?.message ||
     fallbackMessage
   );
 }

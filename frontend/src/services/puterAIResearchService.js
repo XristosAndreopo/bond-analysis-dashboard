@@ -10,20 +10,14 @@
  * - The generated JSON is not saved directly.
  * - The frontend must send the generated JSON to the Django import endpoint.
  * - The backend remains responsible for validation and database import.
- *
- * Data policy:
- * - AI-researched data is not official live market feed data.
- * - Every item must include source URL, retrieved_at, confidence,
- *   needs_review and review_status.
  */
 
-import { puter } from "@heyputer/puter.js";
+import puter from "@heyputer/puter.js";
 
 const DEFAULT_PUTER_MODEL =
   import.meta.env.VITE_PUTER_AI_MODEL || "openai/gpt-5.2-chat";
 
 const DEFAULT_MAX_TOKENS = 6000;
-const DEFAULT_TEMPERATURE = 0.1;
 
 /**
  * Generate DiscoveryResearchResult JSON using Puter AI with web search.
@@ -34,17 +28,45 @@ const DEFAULT_TEMPERATURE = 0.1;
 export async function generateDiscoveryResearchJson(filters = {}) {
   const prompt = buildDiscoveryResearchPrompt(filters);
 
-  const response = await puter.ai.chat(prompt, {
-    model: DEFAULT_PUTER_MODEL,
-    temperature: DEFAULT_TEMPERATURE,
-    max_tokens: DEFAULT_MAX_TOKENS,
-    tools: [{ type: "web_search" }],
-  });
+  const response = await callPuterAI(prompt);
 
   const responseText = extractTextFromPuterResponse(response);
   const jsonText = extractJsonObjectText(responseText);
 
   return JSON.parse(jsonText);
+}
+
+/**
+ * Call Puter AI.
+ *
+ * Some OpenAI-backed models do not support parameters such as temperature.
+ * For that reason, this call intentionally uses only the safest options:
+ * - model
+ * - max_tokens
+ * - tools
+ *
+ * @param {string} prompt - Full AI research prompt.
+ * @returns {Promise<unknown>} Raw Puter response.
+ */
+async function callPuterAI(prompt) {
+  try {
+    return await puter.ai.chat(prompt, {
+      model: DEFAULT_PUTER_MODEL,
+      max_tokens: DEFAULT_MAX_TOKENS,
+      tools: [{ type: "web_search" }],
+    });
+  } catch (error) {
+    const errorMessage = String(error?.message || error || "");
+
+    if (errorMessage.includes("max_tokens")) {
+      return puter.ai.chat(prompt, {
+        model: DEFAULT_PUTER_MODEL,
+        tools: [{ type: "web_search" }],
+      });
+    }
+
+    throw error;
+  }
 }
 
 /**
@@ -163,7 +185,9 @@ function formatFilters(filters) {
       const value = filters[key];
 
       if (Array.isArray(value)) {
-        return `- ${key}: ${value.length > 0 ? value.join(", ") : "not specified"}`;
+        return `- ${key}: ${
+          value.length > 0 ? value.join(", ") : "not specified"
+        }`;
       }
 
       if (value === null || value === undefined || value === "") {
@@ -177,9 +201,6 @@ function formatFilters(filters) {
 
 /**
  * Extract response text from possible Puter response shapes.
- *
- * Puter may return either a string-like response or an object depending on
- * model/provider behavior. This helper keeps parsing defensive.
  *
  * @param {unknown} response - Puter response.
  * @returns {string} Response text.
@@ -213,6 +234,13 @@ function extractTextFromPuterResponse(response) {
       return response.content;
     }
 
+    if (Array.isArray(response.content)) {
+      return response.content
+        .map((part) => part?.text || "")
+        .join("")
+        .trim();
+    }
+
     if (typeof response.toString === "function") {
       const text = response.toString();
 
@@ -227,8 +255,6 @@ function extractTextFromPuterResponse(response) {
 
 /**
  * Extract the first JSON object from text.
- *
- * This is defensive because some models may accidentally wrap JSON in text.
  *
  * @param {string} text - Raw response text.
  * @returns {string} JSON object text.
