@@ -1,3 +1,4 @@
+
 /**
  * API functions for Dashboard, Portfolio, Watchlist, and bond detail pages.
  *
@@ -30,6 +31,32 @@ export async function fetchPortfolio(baseCurrency = "EUR") {
       base_currency: baseCurrency,
     },
   });
+
+  return response.data;
+}
+
+/**
+ * Refresh market data for active Portfolio bonds through backend AI research.
+ *
+ * The backend researches only ISINs that already exist in the authenticated
+ * user's active Portfolio. It imports valid BondMarketData rows and keeps
+ * source/confidence/review metadata.
+ *
+ * @param {string} baseCurrency - Selected base currency for context.
+ * @param {number} maxItems - Maximum Portfolio ISINs to refresh in one run.
+ * @returns {Promise<object>} Refresh result.
+ */
+export async function updatePortfolioMarketData(
+  baseCurrency = "EUR",
+  maxItems = 12
+) {
+  const response = await apiClient.post(
+    "/ai-research/portfolio-market-refresh/",
+    {
+      base_currency: baseCurrency,
+      max_items: maxItems,
+    }
+  );
 
   return response.data;
 }
@@ -150,3 +177,4 @@ export async function movePosition(positionId, payload) {
 
   return response.data;
 }
+

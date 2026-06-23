@@ -1,3 +1,4 @@
+
 /**
  * Portfolio page.
  *
@@ -16,7 +17,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { fetchPortfolio } from "../api/portfolioApi";
+import { fetchPortfolio, updatePortfolioMarketData } from "../api/portfolioApi";
 import Disclaimer from "../components/Disclaimer";
 import RiskBadge from "../components/RiskBadge";
 import SignalBadge from "../components/SignalBadge";
@@ -32,32 +33,77 @@ const BASE_CURRENCY_OPTIONS = ["EUR", "USD", "GBP"];
 function PortfolioPage() {
   const [portfolioData, setPortfolioData] = useState(null);
   const [baseCurrency, setBaseCurrency] = useState("EUR");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isUpdatingPrices, setIsUpdatingPrices] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [updateMessage, setUpdateMessage] = useState("");
+  const [updateWarnings, setUpdateWarnings] = useState([]);
 
   useEffect(() => {
-    async function loadPortfolio() {
-      try {
-        setErrorMessage("");
-
-        const data = await fetchPortfolio(baseCurrency);
-        setPortfolioData(data);
-      } catch (error) {
-        setErrorMessage("Δεν ήταν δυνατή η φόρτωση του Portfolio.");
-      }
-    }
-
     loadPortfolio();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseCurrency]);
+
+  async function loadPortfolio() {
+    setIsLoading(true);
+
+    try {
+      setErrorMessage("");
+
+      const data = await fetchPortfolio(baseCurrency);
+      setPortfolioData(data);
+    } catch (error) {
+      setErrorMessage("Δεν ήταν δυνατή η φόρτωση του Portfolio.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
 
   function handleBaseCurrencyChange(event) {
     setBaseCurrency(event.target.value);
   }
 
-  if (errorMessage) {
+  async function handleUpdatePrices() {
+    setIsUpdatingPrices(true);
+    setErrorMessage("");
+    setUpdateMessage("");
+    setUpdateWarnings([]);
+
+    try {
+      const result = await updatePortfolioMarketData(baseCurrency);
+      const summary = result.import_summary || {};
+      const warnings = result.warnings || [];
+      const importErrors = summary.errors || [];
+
+      setUpdateMessage(
+        `Portfolio market data updated. Created: ${
+          summary.total_created || 0
+        }, updated: ${summary.total_updated || 0}, skipped: ${
+          summary.total_skipped || 0
+        }.`
+      );
+
+      setUpdateWarnings([
+        ...warnings,
+        ...importErrors.map((error) => `Import note: ${error}`),
+      ]);
+
+      await loadPortfolio();
+    } catch (error) {
+      setErrorMessage(
+        error?.response?.data?.detail ||
+          "Δεν ήταν δυνατή η ενημέρωση των τιμών του Portfolio."
+      );
+    } finally {
+      setIsUpdatingPrices(false);
+    }
+  }
+
+  if (errorMessage && !portfolioData) {
     return <div className="error-box">{errorMessage}</div>;
   }
 
-  if (!portfolioData) {
+  if (isLoading && !portfolioData) {
     return <div className="loading-text">Loading portfolio...</div>;
   }
 
@@ -94,6 +140,15 @@ function PortfolioPage() {
             </select>
           </label>
 
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={handleUpdatePrices}
+            disabled={isUpdatingPrices || isLoading}
+          >
+            {isUpdatingPrices ? "Updating Prices..." : "Update Prices"}
+          </button>
+
           <Link
             to="/positions/new?type=PORTFOLIO"
             className="primary-link-button"
@@ -104,6 +159,26 @@ function PortfolioPage() {
       </div>
 
       <Disclaimer text={portfolioData.disclaimer} />
+
+      {errorMessage && <div className="error-box">{errorMessage}</div>}
+
+      {updateMessage && (
+        <div className="success-box">
+          {updateMessage}
+        </div>
+      )}
+
+      {updateWarnings.length > 0 && (
+        <div className="warning-box">
+          <strong>Research warnings / import notes:</strong>
+
+          <ul className="compact-warning-list">
+            {updateWarnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {metrics.mixed_currency_warning && (
         <div className="warning-box">{metrics.mixed_currency_warning}</div>
@@ -230,6 +305,7 @@ function PortfolioPage() {
                 <th>Bond</th>
                 <th>ISIN</th>
                 <th>Currency</th>
+                <th>Market Price</th>
                 <th>Original Value</th>
                 <th>FX Rate</th>
                 <th>Converted Value</th>
@@ -240,13 +316,16 @@ function PortfolioPage() {
                 <th>Risk Score</th>
                 <th>Risk Level</th>
                 <th>Signal</th>
+                <th>Source</th>
+                <th>Last Updated</th>
+                <th>Data Quality</th>
               </tr>
             </thead>
 
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan="13">Δεν υπάρχουν ακόμα ομόλογα στο Portfolio.</td>
+                  <td colSpan="17">Δεν υπάρχουν ακόμα ομόλογα στο Portfolio.</td>
                 </tr>
               ) : (
                 rows.map((row) => {
@@ -264,6 +343,12 @@ function PortfolioPage() {
                       <td>{bond.isin}</td>
 
                       <td>{bond.currency}</td>
+
+                      <td>
+                        {marketData?.market_price
+                          ? formatMoney(marketData.market_price, bond.currency, 4)
+                          : "-"}
+                      </td>
 
                       <td>
                         {formatMoney(
@@ -312,6 +397,16 @@ function PortfolioPage() {
                           label={analysis?.final_signal_label}
                         />
                       </td>
+
+                      <td>
+                        <MarketDataSourceCell marketData={marketData} />
+                      </td>
+
+                      <td>{formatMarketDataTimestamp(marketData)}</td>
+
+                      <td>
+                        <MarketDataQualityCell marketData={marketData} />
+                      </td>
                     </tr>
                   );
                 })
@@ -322,6 +417,68 @@ function PortfolioPage() {
       </div>
     </section>
   );
+}
+
+function MarketDataSourceCell({ marketData }) {
+  /**
+   * Display the transparent source of the latest market data.
+   */
+  if (!marketData) {
+    return "-";
+  }
+
+  const sourceLabel = marketData.source || "Unknown source";
+
+  if (marketData.source_url) {
+    return (
+      <a
+        href={marketData.source_url}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-source-link"
+      >
+        {sourceLabel}
+      </a>
+    );
+  }
+
+  return sourceLabel;
+}
+
+function MarketDataQualityCell({ marketData }) {
+  /**
+   * Show whether the latest market data needs review.
+   */
+  if (!marketData) {
+    return "-";
+  }
+
+  return (
+    <div className="market-data-quality">
+      <span>{marketData.confidence_label || marketData.confidence || "-"}</span>
+      {marketData.needs_review && <small>Needs review</small>}
+      {!marketData.needs_review && <small>Reviewed</small>}
+    </div>
+  );
+}
+
+function formatMarketDataTimestamp(marketData) {
+  /**
+   * Prefer retrieved_at, then quote_date.
+   */
+  if (!marketData) {
+    return "-";
+  }
+
+  if (marketData.retrieved_at) {
+    const parsedDate = new Date(marketData.retrieved_at);
+
+    if (!Number.isNaN(parsedDate.getTime())) {
+      return parsedDate.toLocaleString();
+    }
+  }
+
+  return marketData.quote_date || "-";
 }
 
 function FinancialMetricCard({ title, value, description }) {
@@ -633,3 +790,4 @@ function getGainLossClass(value) {
 }
 
 export default PortfolioPage;
+

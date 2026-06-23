@@ -1,3 +1,4 @@
+
 """
 API views for AI-researched bond data.
 
@@ -8,10 +9,10 @@ These endpoints support three workflows:
    hosted web search, validates structured JSON, imports valid candidates and
    returns the resulting Candidate Bonds.
 
-2. Backend OpenAI Watchlist market refresh
+2. Backend OpenAI Watchlist/Portfolio market refresh
    The frontend requests a refresh for the authenticated user's active
-   Watchlist ISINs. Django calls OpenAI, imports valid BondMarketData rows, and
-   the frontend reloads the Watchlist.
+   Watchlist or Portfolio ISINs. Django calls OpenAI, imports valid
+   BondMarketData rows, and the frontend reloads the relevant page.
 
 3. Manual structured JSON import
    The frontend or a developer may still send already-produced structured JSON
@@ -373,6 +374,84 @@ class AIResearchWatchlistMarketRefreshAPIView(APIView):
         )
 
 
+class AIResearchPortfolioMarketRefreshAPIView(APIView):
+    """
+    Refresh market data for the authenticated user's active Portfolio bonds.
+
+    Endpoint:
+        POST /api/ai-research/portfolio-market-refresh/
+
+    This endpoint does not create new Bond records. It only researches ISINs
+    already present in the user's active Portfolio and imports BondMarketData
+    rows for matching existing Bond master records.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        """
+        Run OpenAI market refresh for active Portfolio ISINs.
+        """
+        serializer = AIResearchWatchlistMarketRefreshRequestSerializer(
+            data=request.data,
+        )
+        serializer.is_valid(raise_exception=True)
+
+        base_currency = serializer.validated_data["base_currency"]
+        max_items = serializer.validated_data["max_items"]
+
+        isins = list(
+            UserBond.objects.filter(
+                user=request.user,
+                holding_type=UserBond.HoldingType.PORTFOLIO,
+                is_active=True,
+            )
+            .select_related("bond")
+            .order_by("bond__isin")
+            .values_list("bond__isin", flat=True)
+            .distinct()[:max_items]
+        )
+
+        if not isins:
+            return Response(
+                {
+                    "detail": "There are no active Portfolio bonds to refresh.",
+                    "requested_isins": [],
+                    "import_summary": {
+                        "total_found": 0,
+                        "total_created": 0,
+                        "total_updated": 0,
+                        "total_skipped": 0,
+                        "errors": [],
+                    },
+                    "warnings": [],
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        try:
+            result = run_openai_market_refresh_and_import(
+                isins=isins,
+                base_currency=base_currency,
+            )
+        except AIResearchServiceError as exc:
+            return Response(
+                {"detail": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            {
+                "detail": "Portfolio market data refresh completed.",
+                "requested_isins": isins,
+                "import_summary": result["import_summary"],
+                "research_payload": result["research_payload"],
+                "warnings": result["research_payload"].get("warnings", []),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 class AIResearchDiscoveryImportAPIView(APIView):
     """
     Import AI-researched discovery results.
@@ -467,3 +546,4 @@ class AIResearchMarketImportAPIView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+

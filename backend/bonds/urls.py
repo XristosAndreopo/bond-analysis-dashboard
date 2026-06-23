@@ -1,3 +1,4 @@
+
 """
 URL configuration for the bonds app.
 
@@ -11,6 +12,7 @@ This file exposes:
 - provider status endpoint
 - OpenAI AI research discovery endpoint
 - OpenAI Watchlist market refresh endpoint
+- OpenAI Portfolio market refresh endpoint
 - AI research JSON import endpoints
 """
 
@@ -21,6 +23,7 @@ from .ai_research.views import (
     AIResearchDiscoveryImportAPIView,
     AIResearchDiscoveryRunAPIView,
     AIResearchMarketImportAPIView,
+    AIResearchPortfolioMarketRefreshAPIView,
     AIResearchWatchlistMarketRefreshAPIView,
 )
 from .discovery.provider_status_views import DiscoveryProviderStatusAPIView
@@ -70,6 +73,11 @@ urlpatterns = [
         "ai-research/watchlist-market-refresh/",
         AIResearchWatchlistMarketRefreshAPIView.as_view(),
         name="ai-research-watchlist-market-refresh",
+    ),
+    path(
+        "ai-research/portfolio-market-refresh/",
+        AIResearchPortfolioMarketRefreshAPIView.as_view(),
+        name="ai-research-portfolio-market-refresh",
     ),
     path(
         "ai-research/import-discovery/",

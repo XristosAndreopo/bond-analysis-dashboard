@@ -2029,3 +2029,48 @@ input[type="file"]::-webkit-file-upload-button:hover {
 .data-quality-cell small {
   color: var(--color-warning);
 }
+
+/* ------------------------------------------------------------------
+ * Portfolio AI market refresh UI
+ * ------------------------------------------------------------------ */
+
+.success-box {
+  border: 1px solid rgba(34, 197, 94, 0.28);
+  background: rgba(34, 197, 94, 0.08);
+  color: #166534;
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin: 16px 0;
+  font-weight: 600;
+}
+
+.compact-warning-list {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+.compact-warning-list li {
+  margin-bottom: 4px;
+}
+
+.inline-source-link {
+  color: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.market-data-quality {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 96px;
+}
+
+.market-data-quality span {
+  font-weight: 700;
+}
+
+.market-data-quality small {
+  color: var(--muted-text, #64748b);
+}
